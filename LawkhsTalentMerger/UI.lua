@@ -1,10 +1,12 @@
 local _, TM = ...
+local function T(key, ...) return TM:T(key, ...) end
 if WOW_PROJECT_ID ~= WOW_PROJECT_MAINLINE then return end
 
 local function Button(parent, label, width, onClick)
     local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     button:SetSize(width, 25)
     button:SetText(label)
+    button:SetWidth(math.max(width, button:GetTextWidth() + 24))
     button:RegisterForClicks("LeftButtonUp")
     button:SetScript("OnClick", onClick)
     return button
@@ -51,17 +53,20 @@ function TM:CreateWindow()
     scroll:SetScrollChild(content)
     self.content, self.widgets = content, {}
     -- Position 1 is Merge; Nuke sits immediately above Clean.
-    self.mergeButton = Button(list, "Merge", 110, function() self:ShowMerge() end)
+    self.mergeButton = Button(list, T("MERGE"), 110, function() self:ShowMerge() end)
     self.mergeButton:SetPoint("BOTTOMLEFT", 20, 22)
-    self.nukeButton = Button(list, "Nuke", 110, function() self:ShowNuke() end)
+    self.nukeButton = Button(list, T("NUKE"), 110, function() self:ShowNuke() end)
     self.nukeButton:SetPoint("BOTTOMRIGHT", -20, 55)
-    self.cleanButton = Button(list, "Clean", 110, function() self:ShowClean() end)
+    self.cleanButton = Button(list, T("CLEAN"), 110, function() self:ShowClean() end)
     self.cleanButton:SetPoint("BOTTOMRIGHT", -20, 22)
-    local refresh = Button(list, "Actualizar", 110, function() self:Refresh() end)
+    local refresh = Button(list, T("REFRESH"), 110, function() self:Refresh() end)
     refresh:SetPoint("LEFT", self.mergeButton, "RIGHT", 12, 0)
     local hint = list:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOMLEFT", 20, 94)
-    hint:SetText("Merge y Clean: especialización actual. Nuke: todas las especializaciones.")
+    hint:SetWidth(550)
+    hint:SetHeight(32)
+    hint:SetJustifyH("LEFT")
+    hint:SetText(T("SCOPE"))
     self.listHint = hint
     frame:SetScript("OnHide", function()
         if self.operation then self.operation.cancelled = true end
@@ -88,7 +93,7 @@ function TM:ShowList(message)
     self.listPanel:Show()
     self.window:Show()
     self:Refresh()
-    self.listHint:SetText(message or "Merge y Clean: especialización actual. Nuke: todas las especializaciones.")
+    self.listHint:SetText(message or T("SCOPE"))
 end
 
 function TM:Dialog(title, report, initial, required, callback)
@@ -101,7 +106,7 @@ function TM:Dialog(title, report, initial, required, callback)
         f.title = self.status
         local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", 0, 0)
-        scroll:SetPoint("BOTTOMRIGHT", -22, 150)
+        scroll:SetPoint("BOTTOMRIGHT", -22, 185)
         local content = CreateFrame("Frame", nil, scroll)
         content:SetWidth(530)
         scroll:SetScrollChild(content)
@@ -118,20 +123,20 @@ function TM:Dialog(title, report, initial, required, callback)
         f.error = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         f.error:SetPoint("BOTTOMLEFT", 0, 105)
         f.error:SetWidth(530)
-        f.error:SetHeight(32)
+        f.error:SetHeight(64)
         f.error:SetJustifyH("LEFT")
         f.error:SetTextColor(1, 0.35, 0.35)
-        f.accept = Button(f, "Confirmar", 120, function()
+        f.accept = Button(f, T("CONFIRM"), 120, function()
             if self.operation or not f.callback then return end
             local value = f.input:GetText()
-            if f.required and value ~= f.required then f.error:SetText("Escribe exactamente " .. f.required .. "."); return end
-            if f.needsName and not value:match("%S") then f.error:SetText("Escribe un nombre para la build."); return end
-            if InCombatLockdown() then f.error:SetText("Espera a salir de combate."); return end
+            if f.required and value ~= f.required then f.error:SetText(T("TYPE_EXACT", f.required)); return end
+            if f.needsName and not value:match("%S") then f.error:SetText(T("NAME_REQUIRED")); return end
+            if InCombatLockdown() then f.error:SetText(T("COMBAT")); return end
             local callback = f.callback
             f.accept:SetEnabled(false)
             local ok, result, reason = pcall(callback, value)
             if not ok or result == false then
-                local message = not ok and ("Error al confirmar: " .. tostring(result)) or reason or "No se pudo completar la operación."
+                local message = not ok and (T("CONFIRM_ERROR", tostring(result))) or reason or T("OP_FAILED")
                 f.error:SetText(message)
                 self:Message(message)
                 f.accept:SetEnabled(true)
@@ -142,10 +147,10 @@ function TM:Dialog(title, report, initial, required, callback)
                 self:UpdateCombatState()
                 return
             end
-            self:ShowList(reason or "Operación completada.")
+            self:ShowList(reason or T("OP_DONE"))
         end)
         f.accept:SetPoint("BOTTOMRIGHT", 0, 0)
-        f.back = Button(f, "Volver", 120, function()
+        f.back = Button(f, T("BACK"), 120, function()
             if self.operation then
                 self.operation.cancelled = true
                 if not self.operation.awaiting then self:AdvanceDeletion(self.operation) end
@@ -165,7 +170,7 @@ function TM:Dialog(title, report, initial, required, callback)
     self.listPanel:Hide()
     f.callback, f.required, f.needsName = callback, required, initial ~= nil and not required
     f.operation = nil
-    f.back:SetText("Volver")
+    f.back:SetText(T("BACK"))
     f.error:SetText("")
     f.title:SetText(title)
     f.report:SetText(report)
@@ -182,51 +187,51 @@ function TM:Dialog(title, report, initial, required, callback)
 end
 
 function TM:ShowMerge(group)
-    if self.operation then self:Message("Hay un borrado en curso. Espera a que termine."); return end
-    if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
+    if self.operation then self:Message(T("BUSY")); return end
+    if InCombatLockdown() then self:Message(T("COMBAT")); return end
     if not group then
         self:ShowList()
-        if #self.groups == 0 then self:Message("No hay builds repetidas."); return end
-        if #self.groups > 1 then self:Message("Elige Merge en el grupo que quieras fusionar."); return end
+        if #self.groups == 0 then self:Message(T("NO_DUPLICATES")); return end
+        if #self.groups > 1 then self:Message(T("PICK_GROUP")); return end
         group = self.groups[1]
     end
     local names = {}
     for _, row in ipairs(group.rows) do names[#names + 1] = self:Colored(row, group.color) end
-    self:Dialog("Merge — nombre de la build resultante",
-        "Estas builds tienen los mismos talentos:\n\n" .. table.concat(names, "\n") ..
-        "\n\nSe renombrará la primera y se borrarán las demás. Se conservarán los talentos y los ajustes de la primera.\n\nNombre sugerido (puedes editarlo):",
+    self:Dialog(T("MERGE_TITLE"),
+        T("MERGE_INTRO") .. table.concat(names, "\n") ..
+        T("MERGE_DETAIL"),
         self:SuggestedName(group), nil, function(name) return self:Merge(group, name) end)
 end
 
 function TM:ShowClean()
-    if self.operation then self:Message("Hay un borrado en curso. Espera a que termine."); return end
-    if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
+    if self.operation then self:Message(T("BUSY")); return end
+    if InCombatLockdown() then self:Message(T("COMBAT")); return end
     self:CreateWindow()
     self:Refresh()
-    if #self.groups == 0 then self:Message("No hay builds repetidas."); return end
-    local groups, lines = self.groups, { "Se conservará la primera build de cada grupo, según el orden de WoW. Las copias restantes se borrarán. Las builds únicas se conservarán.\n" }
+    if #self.groups == 0 then self:Message(T("NO_DUPLICATES")); return end
+    local groups, lines = self.groups, { T("CLEAN_INTRO") }
     for i, group in ipairs(groups) do
-        lines[#lines + 1] = "Grupo " .. i .. " — CONSERVAR: " .. self:Colored(group.rows[1], group.color)
-        for j = 2, #group.rows do lines[#lines + 1] = "BORRAR: " .. self:Colored(group.rows[j], group.color) end
+        lines[#lines + 1] = T("GROUP_KEEP", i, self:Colored(group.rows[1], group.color))
+        for j = 2, #group.rows do lines[#lines + 1] = T("REMOVE", self:Colored(group.rows[j], group.color)) end
         lines[#lines + 1] = ""
     end
-    self:Dialog("Clean — revisar y confirmar", table.concat(lines, "\n"), nil, nil,
+    self:Dialog(T("CLEAN_TITLE"), table.concat(lines, "\n"), nil, nil,
         function() return self:Clean(groups) end)
 end
 
 function TM:ShowNuke()
-    if self.operation then self:Message("Hay un borrado en curso. Espera a que termine."); return end
-    if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
+    if self.operation then self:Message(T("BUSY")); return end
+    if InCombatLockdown() then self:Message(T("COMBAT")); return end
     self:CreateWindow()
     local rows = self:AllRows()
-    if #rows == 0 then self:Message("No hay builds guardadas."); return end
-    local lines = { "Se borrarán TODAS las builds guardadas de este personaje, en TODAS sus especializaciones. Los talentos activos del personaje no se restablecen.\n" }
+    if #rows == 0 then self:Message(T("NO_SAVED")); return end
+    local lines = { T("NUKE_INTRO") }
     for _, row in ipairs(rows) do
         local _, specName = GetSpecializationInfoForSpecID(row.spec)
-        lines[#lines + 1] = "BORRAR: [" .. (specName or tostring(row.spec)) .. "] " .. row.name
+        lines[#lines + 1] = T("REMOVE", "[" .. (specName or tostring(row.spec)) .. "] " .. row.name)
     end
-    lines[#lines + 1] = "\nEscribe exactamente NUKE para confirmar."
-    self:Dialog("Nuke — borrar todas las builds", table.concat(lines, "\n"), "", "NUKE",
+    lines[#lines + 1] = T("NUKE_PROMPT")
+    self:Dialog(T("NUKE_TITLE"), table.concat(lines, "\n"), "", "NUKE",
         function(token) return self:Nuke(rows, token) end)
 end
 
@@ -248,11 +253,11 @@ function TM:ModifyTalentMenu(dropdown, root)
             end)
         end
     end
-    local merge = MenuUtil.CreateButton("Merge", function()
+    local merge = MenuUtil.CreateButton(T("MERGE"), function()
         self:CreateWindow(); self:ShowMerge()
     end)
-    local nuke = MenuUtil.CreateButton("Nuke", function() self:ShowNuke() end)
-    local clean = MenuUtil.CreateButton("Clean", function() self:ShowClean() end)
+    local nuke = MenuUtil.CreateButton(T("NUKE"), function() self:ShowNuke() end)
+    local clean = MenuUtil.CreateButton(T("CLEAN"), function() self:ShowClean() end)
     local ready = not InCombatLockdown() and not self.operation
     merge:SetEnabled(ready)
     clean:SetEnabled(ready)
@@ -290,7 +295,7 @@ function TM:UpdateCombatState()
         self.cleanButton:SetEnabled(ready)
         self.nukeButton:SetEnabled(ready)
         for _, widget in ipairs(self.widgets) do widget.merge:SetEnabled(ready) end
-        if combat and self.view == "list" then self.status:SetText("En combate: Merge, Clean y Nuke están bloqueados.") end
+        if combat and self.view == "list" then self.status:SetText(T("COMBAT_ACTIONS")) end
     end
     local f = self.dialog
     if f and f:IsShown() then
@@ -298,12 +303,12 @@ function TM:UpdateCombatState()
         f.accept:SetEnabled(ready and f.callback ~= nil and (not f.required or value == f.required) and
             (not f.needsName or value:match("%S") ~= nil))
         if self.operation then
-            f.error:SetText("Borrando builds: " .. self.operation.deleted .. "/" .. #self.operation.rows ..
-                (self.operation.cancelled and " · deteniendo…" or " · espera a que WoW confirme."))
-            f.back:SetText("Detener")
+            f.error:SetText(T("PROGRESS", self.operation.deleted, #self.operation.rows,
+                self.operation.cancelled and T("STOPPING") or T("WAIT_CONFIRM")))
+            f.back:SetText(T("STOP"))
         elseif combat then
-            f.error:SetText("Espera a salir de combate.")
-        elseif f.error:GetText() == "Espera a salir de combate." then
+            f.error:SetText(T("COMBAT"))
+        elseif f.error:GetText() == T("COMBAT") then
             f.error:SetText("")
         end
     end
@@ -313,12 +318,12 @@ function TM:DeletionFinished(op)
     local f = self.dialog
     if f and f.operation == op then
         f.operation = nil
-        f.back:SetText("Volver")
+        f.back:SetText(T("BACK"))
         if op.success then self:ShowList(op.message)
         else
             f.callback = nil
             f.accept:SetEnabled(false)
-            f.error:SetText(op.message .. " Vuelve a la lista para revisar lo que queda.")
+            f.error:SetText(op.message .. T("RETURN_REVIEW"))
         end
     elseif self.listHint then self.listHint:SetText(op.message) end
 end
@@ -327,7 +332,7 @@ function TM:Refresh()
     self:CreateWindow()
     self:RegisterMenu()
     if not self:Supported() then
-        self.status:SetText("API de talentos no disponible. Usa /tm status para diagnosticar.")
+        self.status:SetText(T("API_UNAVAILABLE"))
         self.mergeButton:SetEnabled(false); self.cleanButton:SetEnabled(false); self.nukeButton:SetEnabled(false)
         return
     end
@@ -350,7 +355,7 @@ function TM:Refresh()
             widget.label:SetPoint("LEFT", 0, 0)
             widget.label:SetWidth(415)
             widget.label:SetJustifyH("LEFT")
-            widget.merge = Button(widget, "Merge", 80, function() self:ShowMerge(widget.group) end)
+            widget.merge = Button(widget, T("MERGE"), 80, function() self:ShowMerge(widget.group) end)
             widget.merge:SetPoint("RIGHT")
             self.widgets[widgetIndex] = widget
         end
@@ -362,19 +367,19 @@ function TM:Refresh()
         y = y + 30
     end
     for i, group in ipairs(self.groups) do
-        line("|cff" .. group.color .. "Grupo " .. i .. " · " .. #group.rows .. " builds iguales|r", group)
+        line("|cff" .. group.color .. T("GROUP_DUPLICATES", i, #group.rows) .. "|r", group)
         for _, row in ipairs(group.rows) do line("    " .. self:Colored(row, group.color)) end
     end
-    line("Builds únicas / sin exportación")
+    line(T("UNIQUE_HEADER"))
     local unreadable = 0
     for _, row in ipairs(self.rows) do
         if not row.export then unreadable = unreadable + 1 end
-        if not self.colors[row.id] then line(row.name .. (not row.export and " (sin exportación para copia)" or "")) end
+        if not self.colors[row.id] then line(row.name .. (not row.export and T("NO_EXPORT_SUFFIX") or "")) end
     end
     self.content:SetHeight(math.max(y, 1))
     if self.view == "list" then
-        self.status:SetText(#self.rows .. " builds · " .. #self.groups .. " grupos repetidos" ..
-            (unreadable > 0 and (" · " .. unreadable .. " sin leer") or ""))
+        self.status:SetText(T("SUMMARY", #self.rows, #self.groups) ..
+            (unreadable > 0 and (T("UNREADABLE_SUFFIX", unreadable)) or ""))
     end
     self:UpdateCombatState()
     self:Attach()
@@ -406,23 +411,19 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
     TM:Refresh()
     command = command:lower():match("^%s*(.-)%s*$")
     if command == "status" then
-        TM:Message("v" .. TM.version .. " · API retail: " .. (TM:Supported() and "OK" or "no disponible") ..
-            " · menú: " .. (TM.menuRegistered and "registrado" or "no disponible") ..
-            " · builds: " .. #(TM.rows or {}) .. " · grupos: " .. #(TM.groups or {}))
+        TM:Message(T("STATUS", TM.version, TM:Supported() and T("OK") or T("UNAVAILABLE"),
+            TM.menuRegistered and T("REGISTERED") or T("UNAVAILABLE"), #(TM.rows or {}), #(TM.groups or {})))
         if InCombatLockdown() then
-            TM:Message("Lectura pausada por combate: los contadores anteriores pueden estar desactualizados.")
+            TM:Message(T("STATUS_COMBAT"))
         elseif TM:Supported() then
             local spec = TM:SpecID()
             local diagnostic = TM.readDiagnostics and TM.readDiagnostics[spec]
             local defaultIDs = C_ClassTalents.GetConfigIDsBySpecID() or {}
-            TM:Message("Spec: " .. tostring(spec) .. " · IDs sin spec: " .. #defaultIDs ..
-                " · IDs con spec: " .. (diagnostic and diagnostic.raw or 0) ..
-                " · sin información: " .. (diagnostic and diagnostic.missing or 0) ..
-                " · internos activos: " .. (diagnostic and diagnostic.active or 0) ..
-                " · sin exportación: " .. (diagnostic and diagnostic.unreadable or 0) ..
-                " · comparadas por nodos: " .. (diagnostic and diagnostic.byNodes or 0))
+            TM:Message(T("DIAGNOSTICS", tostring(spec), #defaultIDs, diagnostic and diagnostic.raw or 0,
+                diagnostic and diagnostic.missing or 0, diagnostic and diagnostic.active or 0,
+                diagnostic and diagnostic.unreadable or 0, diagnostic and diagnostic.byNodes or 0))
         end
-    elseif not TM:Supported() then TM:Message("API de talentos de Retail no disponible. Comprueba la versión del cliente.")
+    elseif not TM:Supported() then TM:Message(T("RETAIL_REQUIRED"))
     elseif command == "nuke" then TM:ShowNuke()
     elseif command == "clean" then TM:ShowClean()
     elseif command == "merge" then TM:ShowMerge()

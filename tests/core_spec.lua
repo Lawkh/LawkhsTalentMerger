@@ -1,4 +1,6 @@
 local TM = {}
+function GetLocale() return "esES" end
+assert(loadfile("LawkhsTalentMerger/Localization.lua"))("LawkhsTalentMerger", TM)
 WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 assert(loadfile("LawkhsTalentMerger/Core.lua"))("LawkhsTalentMerger", TM)
 assert(loadfile("LawkhsTalentMerger/UI.lua")) -- Syntax validation without game UI.

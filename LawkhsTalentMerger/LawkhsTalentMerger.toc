@@ -1,9 +1,22 @@
 ## Interface: 120100
 ## Title: Lawkh's Talent Merger
-## Notes: Agrupa, fusiona y limpia builds de talentos repetidas.
+## Notes: Group, merge and clean duplicate talent loadouts.
+## Notes-enUS: Group, merge and clean duplicate talent loadouts.
+## Notes-esES: Agrupa, fusiona y limpia builds de talentos repetidas.
+## Notes-deDE: Doppelte Talentkonfigurationen gruppieren, zusammenführen und bereinigen.
+## Notes-frFR: Regroupe, fusionne et nettoie les configurations de talents en double.
+## Notes-itIT: Raggruppa, unisce e pulisce le configurazioni di talenti duplicate.
+## Notes-ptBR: Agrupa, mescla e limpa configurações de talentos duplicadas.
+## Notes-ruRU: Группирует, объединяет и очищает повторяющиеся наборы талантов.
+## Notes-koKR: 중복된 특성 구성을 그룹으로 묶고 병합하며 정리합니다.
+## Notes-zhCN: 对重复的天赋配置进行分组、合并和清理。
+## Notes-zhTW: 將重複的天賦配置分組、合併並清理。
+## Notes-esMX: Agrupa, fusiona y limpia builds de talentos repetidas.
+## Notes-enGB: Group, merge and clean duplicate talent loadouts.
 ## Author: Lawkh
-## Version: 0.2.1
+## Version: 0.3.0
 ## OptionalDeps: TalentTreeTweaks, RaiderIO
 ## SavedVariablesPerCharacter: LawkhsTalentMergerDB
+Localization.lua
 Core.lua
 UI.lua

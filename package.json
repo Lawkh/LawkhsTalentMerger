@@ -1,6 +1,6 @@
 {
   "name": "lawkhs-talent-merger-tests",
   "private": true,
-  "scripts": { "test": "fengari tests/core_spec.lua && fengari tests/ui_spec.lua" },
+  "scripts": { "test": "fengari tests/localization_spec.lua && fengari tests/core_spec.lua && fengari tests/ui_spec.lua" },
   "devDependencies": { "fengari-node-cli": "0.1.0" }
 }

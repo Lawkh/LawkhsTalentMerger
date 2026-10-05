@@ -1,6 +1,7 @@
 -- Runs the actual UI module against a minimal retail frame/event harness.
 -- This checks lifecycle and callbacks, not rendering or secure/taint behavior.
 local TM, combat, frames, timers = {}, false, {}, {}
+function GetLocale() return "esES" end
 WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 UIParent, UISpecialFrames, SlashCmdList = {}, {}, {}
 NORMAL_FONT_COLOR = {}
@@ -52,6 +53,7 @@ for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFram
     methods[name] = function() end
 end
 function methods:GetFrameLevel() return 1 end
+function methods:GetTextWidth() return 80 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
 function methods:GetScript(name) return self.scripts[name] end
 function methods:HookScript(name, fn) self.hooks[name] = fn end
@@ -90,6 +92,7 @@ function talents:IsStarterBuildConfig() return false end
 function talents:IsInspecting() return self.inspecting end
 function talents:RefreshLoadoutOptions() end
 
+assert(loadfile("LawkhsTalentMerger/Localization.lua"))("LawkhsTalentMerger", TM)
 assert(loadfile("LawkhsTalentMerger/Core.lua"))("LawkhsTalentMerger", TM)
 TM.Message = function() end
 assert(loadfile("LawkhsTalentMerger/UI.lua"))("LawkhsTalentMerger", TM)
@@ -124,7 +127,7 @@ test("native menu shows Merge first and Nuke above Clean, colors duplicates", fu
     local root = rootMenu()
     local originalCallback = root.items[1].callback
     menuCallbacks.MENU_CLASS_TALENT_PROFILE(nil, root)
-    assert(root.items[1].text == "Merge" and root.items[2].text == "Nuke" and root.items[3].text == "Clean")
+    assert(root.items[1].text == TM:T("MERGE") and root.items[2].text == TM:T("NUKE") and root.items[3].text == TM:T("CLEAN"))
     assert(root.items[4].callback == originalCallback and root.items[4].text == "Raid")
     for i = 4, 5 do
         local font = { SetTextColor = function(self, r, g, b) self.r, self.g, self.b = r, g, b end }
@@ -276,5 +279,28 @@ test("Classic skips UI initialization", function()
     assert(loadfile("LawkhsTalentMerger/UI.lua"))("LawkhsTalentMerger", TM)
     assert(#frames == before)
     WOW_PROJECT_ID = 1
+end)
+test("every WoW locale renders all views and preserves build names and NUKE", function()
+    for _, locale in ipairs({ "enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "ptBR", "ruRU", "koKR", "zhCN", "zhTW" }) do
+        GetLocale = function() return locale end
+        local context = {}
+        assert(loadfile("LawkhsTalentMerger/Localization.lua"))("LawkhsTalentMerger", context)
+        assert(loadfile("LawkhsTalentMerger/Core.lua"))("LawkhsTalentMerger", context)
+        context.Message = function() end
+        assert(loadfile("LawkhsTalentMerger/UI.lua"))("LawkhsTalentMerger", context)
+        context:ShowList()
+        assert(context.mergeButton:GetText() == context:T("MERGE"), locale)
+        local menu = rootMenu(); context:ModifyTalentMenu(nil, menu)
+        assert(menu.items[1].text == context:T("MERGE") and menu.items[2].text == context:T("NUKE"), locale)
+        context:ShowMerge()
+        assert(context.status:GetText() == context:T("MERGE_TITLE") and context.dialog.input:GetText() == "Raid/Mythic", locale)
+        context:ShowClean()
+        assert(context.dialog.report:GetText():find(context:T("REMOVE", ""), 1, true), locale)
+        context:ShowNuke()
+        context.dialog.input:SetText("NUKE")
+        assert(context.dialog.accept.enabled and context.dialog.required == "NUKE", locale)
+        context.window:Hide()
+    end
+    GetLocale = function() return "esES" end
 end)
 print(passed .. " UI tests passed")

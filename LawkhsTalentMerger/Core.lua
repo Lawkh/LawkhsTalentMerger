@@ -1,5 +1,6 @@
 local _, TM = ...
-TM.version = "0.2.1"
+local function T(key, ...) return TM:T(key, ...) end
+TM.version = "0.3.0"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -149,15 +150,15 @@ function TM:SuggestedName(group)
 end
 
 function TM:Writable(allowOperation)
-    if self.operation and not allowOperation then return false, "Hay un borrado en curso. Espera a que termine." end
-    if not self:Supported() then return false, "Este addon necesita WoW Retail y sus API de talentos." end
-    if InCombatLockdown() then return false, "Espera a salir de combate." end
+    if self.operation and not allowOperation then return false, T("BUSY") end
+    if not self:Supported() then return false, T("RETAIL_REQUIRED") end
+    if InCombatLockdown() then return false, T("COMBAT") end
     if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then
-        return false, "Resucita antes de modificar las builds."
+        return false, T("DEAD")
     end
     local active = C_ClassTalents.GetActiveConfigID()
     if active and C_Traits.ConfigHasStagedChanges(active) then
-        return false, "Aplica o deshaz los cambios de talentos pendientes primero."
+        return false, T("STAGED")
     end
     return true
 end
@@ -173,7 +174,7 @@ function TM:Validate(rows, allowOperation)
         end
         local current = cached[row.spec][row.id]
         if not current or current.name ~= row.name or current.key ~= row.key then
-            return false, "Las builds han cambiado. Revisa la lista y confirma de nuevo."
+            return false, T("CHANGED")
         end
     end
     return true
@@ -184,7 +185,7 @@ function TM:Backup(rows, action)
     LawkhsTalentMergerDB.backups = LawkhsTalentMergerDB.backups or {}
     local backup = { time = time(), action = action, builds = {} }
     for _, row in ipairs(rows) do
-        if not row.export then return false, "No se pudo exportar " .. row.name .. ". No se ha borrado nada." end
+        if not row.export then return false, T("EXPORT_FAILED", row.name) end
         backup.builds[#backup.builds + 1] = { name = row.name, spec = row.spec, export = row.export }
     end
     table.insert(LawkhsTalentMergerDB.backups, 1, backup)
@@ -196,8 +197,8 @@ function TM:FinishDeletion(op, success, reason)
     if self.operation ~= op then return end
     self.operation = nil
     op.success = success
-    op.message = (reason and (reason .. " ") or "") .. "Borradas: " .. op.deleted .. "."
-    if not success then op.message = op.message .. " Pendientes: " .. (#op.rows - op.deleted) .. "." end
+    op.message = (reason and (reason .. " ") or "") .. T("DELETED", op.deleted)
+    if not success then op.message = op.message .. T("REMAINING", #op.rows - op.deleted) end
     self:Message(op.message)
     self:Refresh()
     if self.DeletionFinished then self:DeletionFinished(op) end
@@ -216,7 +217,7 @@ end
 
 function TM:AdvanceDeletion(op)
     if self.operation ~= op or op.awaiting then return end
-    if op.cancelled then self:FinishDeletion(op, false, "Borrado detenido."); return end
+    if op.cancelled then self:FinishDeletion(op, false, T("DELETE_STOPPED")); return end
     local row = op.rows[op.index]
     if not row then self:FinishDeletion(op, true); return end
     local valid, reason = self:Validate({ row }, true)
@@ -230,7 +231,7 @@ function TM:AdvanceDeletion(op)
         if op.retries <= 3 then
             C_Timer.After(0.4, function() self:AdvanceDeletion(op) end)
         else
-            self:FinishDeletion(op, false, "WoW no pudo borrar «" .. row.name .. "». No se ha continuado con las siguientes builds.")
+            self:FinishDeletion(op, false, T("DELETE_REFUSED", row.name))
         end
         return
     end
@@ -240,12 +241,12 @@ function TM:AdvanceDeletion(op)
     C_Timer.After(5, function()
         if self.operation ~= op or op.awaiting ~= row.id then return end
         if not C_Traits.GetConfigInfo(row.id) then self:ConfirmDeletion(row.id)
-        else self:FinishDeletion(op, false, "WoW no confirmó el borrado de «" .. row.name .. "».") end
+        else self:FinishDeletion(op, false, T("DELETE_TIMEOUT", row.name)) end
     end)
 end
 
 function TM:DeleteRows(rows)
-    if self.operation then return false, "Hay un borrado en curso. Espera a que termine." end
+    if self.operation then return false, T("BUSY") end
     local op = { rows = rows, index = 1, deleted = 0, retries = 0 }
     self.operation = op
     self:AdvanceDeletion(op)
@@ -269,14 +270,14 @@ end
 
 function TM:Merge(group, name)
     name = name:match("^%s*(.-)%s*$")
-    if name == "" or name:find("[|%c]") then return false, "Escribe un nombre válido sin códigos de color." end
+    if name == "" or name:find("[|%c]") then return false, T("NAME_INVALID") end
     local ok, reason = self:Validate(group.rows)
     if ok then ok, reason = self:Backup(group.rows, "Merge") end
     if not ok then self:Message(reason); return false, reason end
     -- Reuse the first identical config: avoids the loadout cap and async creation,
     -- and preserves its equipment/action-bar settings.
     if not C_ClassTalents.RenameConfig(group.rows[1].id, name) then
-        local reason = "WoW no pudo guardar el nombre. Prueba otro nombre. No se ha borrado ninguna build."
+        local reason = T("RENAME_FAILED")
         self:Message(reason); return false, reason
     end
     local remove = {}
@@ -296,11 +297,11 @@ function TM:AllRows()
 end
 
 function TM:Nuke(rows, token)
-    if token ~= "NUKE" then return false, "Debes escribir exactamente NUKE." end
+    if token ~= "NUKE" then return false, T("NUKE_REQUIRED") end
     local writable, reason = self:Writable()
     if not writable then return false, reason end
     local current = self:AllRows()
-    if #current ~= #rows then return false, "La lista ha cambiado. Confirma de nuevo." end
+    if #current ~= #rows then return false, T("LIST_CHANGED") end
     local ok, reason = self:Validate(rows)
     if ok then ok, reason = self:Backup(rows, "Nuke") end
     if not ok then self:Message(reason); return false, reason end
