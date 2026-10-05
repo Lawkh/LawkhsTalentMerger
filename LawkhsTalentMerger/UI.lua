@@ -214,9 +214,8 @@ function TM:Attach()
     local open = Button(talents, "Lawkh's Talent Merger", 190, function()
         self.window:Show(); self:Refresh()
     end)
-    local dropdown = talents.LoadSystem and talents.LoadSystem.Dropdown
-    if dropdown then open:SetPoint("BOTTOMLEFT", dropdown, "TOPLEFT", 0, 50)
-    else open:SetPoint("TOPRIGHT", -45, -38) end
+    -- Keep the launcher away from the loadout menu, which opens above its anchor.
+    open:SetPoint("TOPRIGHT", -45, -38)
     self.openButton = open
 end
 
@@ -303,7 +302,7 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
     TM:Refresh()
     command = command:lower():match("^%s*(.-)%s*$")
     if command == "status" then
-        TM:Message("v0.1.3 · API retail: " .. (TM:Supported() and "OK" or "no disponible") ..
+        TM:Message("v" .. TM.version .. " · API retail: " .. (TM:Supported() and "OK" or "no disponible") ..
             " · menú: " .. (TM.menuRegistered and "registrado" or "no disponible") ..
             " · builds: " .. #(TM.rows or {}) .. " · grupos: " .. #(TM.groups or {}))
         if InCombatLockdown() then

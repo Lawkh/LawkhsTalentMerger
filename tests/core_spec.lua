@@ -148,4 +148,25 @@ test("current specialization uses the same default query verified in game", func
     assert(#TM:Read(71) == 6 and #TM:Read(72) == 1)
     C_ClassTalents.GetConfigIDsBySpecID = api
 end)
+test("empty C export falls back to Blizzard serializer for the saved config", function()
+    builds[6].treeIDs = { 100 }
+    local savedHash, savedVersion = C_Traits.GetTreeHash, C_Traits.GetLoadoutSerializationVersion
+    C_Traits.GetTreeHash = function() return { 1, 2 } end
+    C_Traits.GetLoadoutSerializationVersion = function() return 2 end
+    ExportUtil = { MakeExportDataStream = function()
+        return { GetExportString = function(stream) return stream.header .. stream.body end }
+    end }
+    PlayerSpellsFrame = { TalentsFrame = {
+        GetSpecID = function() return 71 end,
+        IsInspecting = function() return false end,
+        WriteLoadoutHeader = function(_, stream, version, spec) stream.header = version .. ":" .. spec .. ":" end,
+        WriteLoadoutContent = function(_, stream, config, tree)
+            assert(config == 6 and tree == 100); stream.body = "SAVED_CHOICES"
+        end,
+    } }
+    assert(TM:Export(6, 71, builds[6]) == "2:71:SAVED_CHOICES")
+    assert(not TM:Export(6, 72, builds[6]))
+    PlayerSpellsFrame, ExportUtil = nil, nil
+    C_Traits.GetTreeHash, C_Traits.GetLoadoutSerializationVersion = savedHash, savedVersion
+end)
 print(passed .. " tests passed")

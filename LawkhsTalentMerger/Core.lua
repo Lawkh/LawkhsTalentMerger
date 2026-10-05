@@ -1,4 +1,5 @@
 local _, TM = ...
+TM.version = "0.1.4"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -28,6 +29,28 @@ function TM:SpecID()
     return id and id > 0 and id or nil
 end
 
+function TM:Export(id, specID, info)
+    local ok, value = pcall(C_Traits.GenerateImportString, id)
+    if ok and type(value) == "string" and value ~= "" then return value end
+    -- Some saved configs do not export through the C API. Use Blizzard's
+    -- serializer, with the saved config ID, without activating the loadout.
+    local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
+    local treeID = info.treeIDs and info.treeIDs[1]
+    if not talents or not treeID or not ExportUtil or
+        not talents.WriteLoadoutHeader or not talents.WriteLoadoutContent or
+        talents:GetSpecID() ~= specID or talents:IsInspecting() then return nil end
+    ok, value = pcall(function()
+        local hash = C_Traits.GetTreeHash(treeID)
+        if not hash or #hash == 0 then return nil end
+        if C_ClassTalents.IsConfigPopulated and not C_ClassTalents.IsConfigPopulated(id) then return nil end
+        local stream = ExportUtil.MakeExportDataStream()
+        talents:WriteLoadoutHeader(stream, C_Traits.GetLoadoutSerializationVersion(), specID, hash)
+        talents:WriteLoadoutContent(stream, id, treeID)
+        return stream:GetExportString()
+    end)
+    return ok and type(value) == "string" and value ~= "" and value or nil
+end
+
 -- Export strings contain class, spec, hero choices and ranks, but no loadout name.
 -- Failed/empty exports must never be grouped as duplicates.
 function TM:Read(specID)
@@ -46,9 +69,9 @@ function TM:Read(specID)
     for _, id in ipairs(ids) do
         local info = C_Traits.GetConfigInfo(id)
         if info and id ~= C_ClassTalents.GetActiveConfigID() then
-            local ok, export = pcall(C_Traits.GenerateImportString, id)
+            local export = self:Export(id, specID, info)
             rows[#rows + 1] = { id = id, spec = specID, name = info.name,
-                key = ok and type(export) == "string" and export ~= "" and export or nil }
+                key = export }
             if not rows[#rows].key then diagnostic.unreadable = diagnostic.unreadable + 1 end
         elseif not info then
             diagnostic.missing = diagnostic.missing + 1
