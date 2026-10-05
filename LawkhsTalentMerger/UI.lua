@@ -27,6 +27,9 @@ function TM:CreateWindow()
         edgeFile = "Interface/Tooltips/UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 16,
         insets = { left = 4, right = 4, top = 4, bottom = 4 } })
     frame:SetBackdropColor(0.04, 0.04, 0.06, 0.98)
+    local background = frame:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints()
+    background:SetColorTexture(0.04, 0.04, 0.06, 0.97)
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 20, -18)
     title:SetText("Lawkh's Talent Merger")
@@ -37,7 +40,10 @@ function TM:CreateWindow()
     status:SetWidth(550)
     status:SetJustifyH("LEFT")
     self.status = status
-    local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    local list = CreateFrame("Frame", nil, frame)
+    list:SetAllPoints()
+    self.listPanel, self.view = list, "list"
+    local scroll = CreateFrame("ScrollFrame", nil, list, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 20, -85)
     scroll:SetPoint("BOTTOMRIGHT", -42, 132)
     local content = CreateFrame("Frame", nil, scroll)
@@ -45,54 +51,72 @@ function TM:CreateWindow()
     scroll:SetScrollChild(content)
     self.content, self.widgets = content, {}
     -- Position 1 is Merge; Nuke sits immediately above Clean.
-    self.mergeButton = Button(frame, "Merge", 110, function() self:ShowMerge() end)
+    self.mergeButton = Button(list, "Merge", 110, function() self:ShowMerge() end)
     self.mergeButton:SetPoint("BOTTOMLEFT", 20, 22)
-    self.nukeButton = Button(frame, "Nuke", 110, function() self:ShowNuke() end)
+    self.nukeButton = Button(list, "Nuke", 110, function() self:ShowNuke() end)
     self.nukeButton:SetPoint("BOTTOMRIGHT", -20, 55)
-    self.cleanButton = Button(frame, "Clean", 110, function() self:ShowClean() end)
+    self.cleanButton = Button(list, "Clean", 110, function() self:ShowClean() end)
     self.cleanButton:SetPoint("BOTTOMRIGHT", -20, 22)
-    local refresh = Button(frame, "Actualizar", 110, function() self:Refresh() end)
+    local refresh = Button(list, "Actualizar", 110, function() self:Refresh() end)
     refresh:SetPoint("LEFT", self.mergeButton, "RIGHT", 12, 0)
-    local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    local hint = list:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOMLEFT", 20, 94)
     hint:SetText("Merge y Clean: especialización actual. Nuke: todas las especializaciones.")
+    self.listHint = hint
+    frame:SetScript("OnHide", function()
+        if self.dialog then
+            self.dialog:Hide()
+            self.dialog.input:ClearFocus()
+            self.dialog.callback = nil
+        end
+        self.view = "list"
+        self.listPanel:Show()
+    end)
     table.insert(UISpecialFrames, "LawkhsTalentMergerWindow")
     frame:Hide()
 end
 
+function TM:ShowList(message)
+    self:CreateWindow()
+    if self.dialog then
+        self.dialog:Hide()
+        self.dialog.input:ClearFocus()
+        self.dialog.callback = nil
+    end
+    self.view = "list"
+    self.listPanel:Show()
+    self.window:Show()
+    self:Refresh()
+    self.listHint:SetText(message or "Merge y Clean: especialización actual. Nuke: todas las especializaciones.")
+end
+
 function TM:Dialog(title, report, initial, required, callback)
+    self:CreateWindow()
     if not self.dialog then
-        local f = CreateFrame("Frame", "LawkhsTalentMergerDialog", UIParent, "BackdropTemplate")
+        local f = CreateFrame("Frame", nil, self.window)
         self.dialog = f
-        f:SetSize(570, 440)
-        f:SetPoint("CENTER")
-        f:SetFrameStrata("FULLSCREEN_DIALOG")
-        f:SetToplevel(true)
-        f:SetFrameLevel(self.window:GetFrameLevel() + 20)
-        f:EnableMouse(true)
-        f:SetBackdrop(self.window:GetBackdrop())
-        f:SetBackdropColor(0.05, 0.05, 0.07, 1)
-        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        f.title:SetPoint("TOPLEFT", 20, -20)
+        f:SetPoint("TOPLEFT", 20, -85)
+        f:SetPoint("BOTTOMRIGHT", -20, 20)
+        f.title = self.status
         local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 20, -55)
-        scroll:SetPoint("BOTTOMRIGHT", -42, 150)
+        scroll:SetPoint("TOPLEFT", 0, 0)
+        scroll:SetPoint("BOTTOMRIGHT", -22, 150)
         local content = CreateFrame("Frame", nil, scroll)
-        content:SetWidth(500)
+        content:SetWidth(530)
         scroll:SetScrollChild(content)
         f.report = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         f.report:SetPoint("TOPLEFT")
-        f.report:SetWidth(500)
+        f.report:SetWidth(530)
         f.report:SetJustifyH("LEFT")
         f.content, f.scroll = content, scroll
         f.input = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-        f.input:SetSize(500, 28)
-        f.input:SetPoint("BOTTOMLEFT", 25, 65)
+        f.input:SetSize(530, 28)
+        f.input:SetPoint("BOTTOMLEFT", 5, 65)
         f.input:SetAutoFocus(false)
         f.input:SetMaxLetters(0)
         f.error = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        f.error:SetPoint("BOTTOMLEFT", 20, 105)
-        f.error:SetWidth(500)
+        f.error:SetPoint("BOTTOMLEFT", 0, 105)
+        f.error:SetWidth(530)
         f.error:SetHeight(32)
         f.error:SetJustifyH("LEFT")
         f.error:SetTextColor(1, 0.35, 0.35)
@@ -111,20 +135,21 @@ function TM:Dialog(title, report, initial, required, callback)
                 f.accept:SetEnabled(true)
                 return
             end
-            f:Hide()
+            self:ShowList(reason or "Operación completada.")
         end)
-        f.accept:SetPoint("BOTTOMRIGHT", -20, 20)
-        local cancel = Button(f, "Cancelar", 120, function() f:Hide() end)
-        cancel:SetPoint("RIGHT", f.accept, "LEFT", -10, 0)
+        f.accept:SetPoint("BOTTOMRIGHT", 0, 0)
+        f.back = Button(f, "Volver", 120, function() self:ShowList() end)
+        f.back:SetPoint("BOTTOMLEFT", 0, 0)
         f.input:SetScript("OnTextChanged", function(box)
             f.accept:SetEnabled(not InCombatLockdown() and
                 (not f.required or box:GetText() == f.required) and
                 (not f.needsName or box:GetText():match("%S") ~= nil))
         end)
-        f.input:SetScript("OnEscapePressed", function() f:Hide() end)
-        table.insert(UISpecialFrames, "LawkhsTalentMergerDialog")
+        f.input:SetScript("OnEscapePressed", function() self:ShowList() end)
     end
     local f = self.dialog
+    self.view = "confirm"
+    self.listPanel:Hide()
     f.callback, f.required, f.needsName = callback, required, initial ~= nil and not required
     f.error:SetText("")
     f.title:SetText(title)
@@ -137,14 +162,14 @@ function TM:Dialog(title, report, initial, required, callback)
         (not required or f.input:GetText() == required) and
         (not f.needsName or f.input:GetText():match("%S") ~= nil))
     f:Show()
+    self.window:Show()
     if initial ~= nil then f.input:SetFocus(); f.input:HighlightText() end
 end
 
 function TM:ShowMerge(group)
     if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
     if not group then
-        self.window:Show()
-        self:Refresh()
+        self:ShowList()
         if #self.groups == 0 then self:Message("No hay builds repetidas."); return end
         if #self.groups > 1 then self:Message("Elige Merge en el grupo que quieras fusionar."); return end
         group = self.groups[1]
@@ -232,7 +257,7 @@ function TM:Attach()
     if not talents or self.attached or InCombatLockdown() then return end
     self.attached = talents
     local open = Button(talents, "Lawkh's Talent Merger", 190, function()
-        self.window:Show(); self:Refresh()
+        self:ShowList()
     end)
     -- Keep the launcher away from the loadout menu, which opens above its anchor.
     open:SetPoint("TOPRIGHT", -45, -38)
@@ -247,7 +272,7 @@ function TM:UpdateCombatState()
         self.cleanButton:SetEnabled(ready)
         self.nukeButton:SetEnabled(ready)
         for _, widget in ipairs(self.widgets) do widget.merge:SetEnabled(ready) end
-        if combat then self.status:SetText("En combate: Merge, Clean y Nuke están bloqueados.") end
+        if combat and self.view == "list" then self.status:SetText("En combate: Merge, Clean y Nuke están bloqueados.") end
     end
     local f = self.dialog
     if f and f:IsShown() then
@@ -311,8 +336,10 @@ function TM:Refresh()
         if not self.colors[row.id] then line(row.name .. (not row.export and " (sin exportación para copia)" or "")) end
     end
     self.content:SetHeight(math.max(y, 1))
-    self.status:SetText(#self.rows .. " builds · " .. #self.groups .. " grupos repetidos" ..
-        (unreadable > 0 and (" · " .. unreadable .. " sin leer") or ""))
+    if self.view == "list" then
+        self.status:SetText(#self.rows .. " builds · " .. #self.groups .. " grupos repetidos" ..
+            (unreadable > 0 and (" · " .. unreadable .. " sin leer") or ""))
+    end
     self:UpdateCombatState()
     self:Attach()
 end
@@ -362,5 +389,6 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
     elseif command == "nuke" then TM:ShowNuke()
     elseif command == "clean" then TM:ShowClean()
     elseif command == "merge" then TM:ShowMerge()
-    else TM.window:SetShown(not TM.window:IsShown()) end
+    elseif TM.window:IsShown() then TM.window:Hide()
+    else TM:ShowList() end
 end

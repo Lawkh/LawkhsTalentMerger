@@ -48,7 +48,7 @@ local methods = {}
 for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFrameStrata", "SetClampedToScreen",
     "SetMovable", "EnableMouse", "RegisterForDrag", "SetBackdropColor", "SetJustifyH", "SetScrollChild",
     "SetAutoFocus", "SetMaxLetters", "SetFocus", "HighlightText", "SetVerticalScroll", "StartMoving", "StopMovingOrSizing",
-    "RegisterForClicks", "SetToplevel", "SetFrameLevel", "SetTextColor" }) do
+    "RegisterForClicks", "SetToplevel", "SetFrameLevel", "SetTextColor", "SetAllPoints", "SetColorTexture", "ClearFocus" }) do
     methods[name] = function() end
 end
 function methods:GetFrameLevel() return 1 end
@@ -66,15 +66,20 @@ function methods:GetStringHeight() return 100 end
 function methods:SetEnabled(value) self.enabled = value end
 function methods:SetShown(value) self.shown = value end
 function methods:Show() self.shown = true end
-function methods:Hide() self.shown = false end
+function methods:Hide()
+    local wasShown = self.shown
+    self.shown = false
+    if wasShown and self.scripts.OnHide then self.scripts.OnHide(self) end
+end
 function methods:IsShown() return self.shown end
-function CreateFrame(_, name)
-    local frame = setmetatable({ scripts = {}, hooks = {}, events = {}, shown = true }, { __index = methods })
+function CreateFrame(kind, name, parent)
+    local frame = setmetatable({ kind = kind, name = name, parent = parent, scripts = {}, hooks = {}, events = {}, shown = true }, { __index = methods })
     frames[#frames + 1] = frame
     if name then _G[name] = frame end
     return frame
 end
 function methods:CreateFontString() return CreateFrame("FontString") end
+function methods:CreateTexture() return CreateFrame("Texture", nil, self) end
 function hooksecurefunc(object, method, hook) object.secureHook = hook end
 local talents = CreateFrame("Frame")
 talents.configIDs, talents.configIDToName = { 1, 2 }, { [1] = "Raid", [2] = "Mythic" }
@@ -181,7 +186,7 @@ test("menu generated before combat cannot open a mutation dialog during combat",
     assert(not TM.dialog:IsShown() and builds[1].name == "Raid" and builds[2])
     combat = false; TM:Refresh()
 end)
-test("Confirm performs real Merge callback then closes on success", function()
+test("Confirm performs real Merge callback then returns to list in same window", function()
     local rename, delete, getIDs = C_ClassTalents.RenameConfig, C_ClassTalents.DeleteConfig, C_ClassTalents.GetConfigIDsBySpecID
     C_ClassTalents.RenameConfig = function(id, name) builds[id].name = name; return true end
     C_ClassTalents.DeleteConfig = function(id) builds[id] = nil; return true end
@@ -190,6 +195,8 @@ test("Confirm performs real Merge callback then closes on success", function()
     TM.dialog.input:SetText("Combined")
     TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
     assert(not TM.dialog:IsShown() and builds[1].name == "Combined" and not builds[2])
+    assert(TM.window:IsShown() and TM.listPanel:IsShown() and TM.view == "list")
+    assert(TM.listHint:GetText():find("Borradas"))
     assert(LawkhsTalentMergerDB.backups[1].builds[1].export == "AAA")
     builds[1].name = "Raid"; builds[2] = { name = "Mythic", key = "AAA" }
     C_ClassTalents.RenameConfig, C_ClassTalents.DeleteConfig, C_ClassTalents.GetConfigIDsBySpecID = rename, delete, getIDs
@@ -206,6 +213,37 @@ test("API exceptions are visible and keep the confirmation open", function()
     TM:ShowMerge()
     TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
     assert(TM.dialog:IsShown() and TM.dialog.error:GetText():find("Unexpected rename"))
+end)
+test("all confirmations reuse a child view of the single window", function()
+    local window, dialog = TM.window, TM.dialog
+    TM:ShowClean(); assert(TM.window == window and TM.dialog == dialog)
+    assert(dialog.parent == window and dialog:IsShown() and not TM.listPanel:IsShown())
+    TM:ShowNuke(); assert(TM.window == window and TM.dialog == dialog and TM.view == "confirm")
+    local rootWindows = 0
+    for _, frame in ipairs(frames) do
+        if frame.kind == "Frame" and frame.parent == UIParent then rootWindows = rootWindows + 1 end
+    end
+    assert(rootWindows == 1 and #UISpecialFrames == 1)
+end)
+test("Back returns to list and clears the pending destructive action", function()
+    TM:ShowNuke(); TM.dialog.input:SetText("NUKE")
+    TM.dialog.back.scripts.OnClick(TM.dialog.back, "LeftButton")
+    assert(TM.view == "list" and TM.listPanel:IsShown() and not TM.dialog:IsShown())
+    assert(TM.dialog.callback == nil and builds[1] and builds[2])
+end)
+test("background refresh preserves confirmation content and edited name", function()
+    TM:ShowMerge(); TM.dialog.input:SetText("Keep my edit")
+    local report, title, callback = TM.dialog.report:GetText(), TM.status:GetText(), TM.dialog.callback
+    events.scripts.OnEvent(events, "TRAIT_CONFIG_UPDATED"); flush()
+    assert(TM.view == "confirm" and not TM.listPanel:IsShown())
+    assert(TM.dialog.input:GetText() == "Keep my edit" and TM.dialog.report:GetText() == report)
+    assert(TM.status:GetText() == title and TM.dialog.callback == callback)
+end)
+test("closing and reopening the window resets to list safely", function()
+    TM.window:Hide()
+    assert(TM.dialog.callback == nil and not TM.dialog:IsShown() and TM.view == "list")
+    TM:ShowList()
+    assert(TM.window:IsShown() and TM.listPanel:IsShown() and not TM.dialog:IsShown())
 end)
 test("Classic skips UI initialization", function()
     local before = #frames
