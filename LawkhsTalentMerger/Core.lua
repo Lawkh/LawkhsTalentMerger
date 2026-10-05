@@ -18,6 +18,11 @@ function TM:Message(text)
 end
 
 function TM:SpecID()
+    -- Use the same helper as Blizzard's talent frame when it is available.
+    if PlayerUtil and PlayerUtil.GetCurrentSpecID then
+        local id = PlayerUtil.GetCurrentSpecID()
+        if type(id) == "number" and id > 0 then return id end
+    end
     local index = C_SpecializationInfo.GetSpecialization()
     local id = index and C_SpecializationInfo.GetSpecializationInfo(index)
     return id and id > 0 and id or nil
@@ -28,12 +33,27 @@ end
 function TM:Read(specID)
     local rows = {}
     if not specID or not self:Supported() or InCombatLockdown() then return rows end
-    for _, id in ipairs(C_ClassTalents.GetConfigIDsBySpecID(specID) or {}) do
+    -- The nil argument is Blizzard's documented current-specialization query.
+    -- Use it for the current spec, matching the verified in-game list.
+    local current = specID == self:SpecID()
+    local ids
+    if current then ids = C_ClassTalents.GetConfigIDsBySpecID()
+    else ids = C_ClassTalents.GetConfigIDsBySpecID(specID) end
+    ids = ids or {}
+    local diagnostic = { spec = specID, raw = #ids, missing = 0, active = 0, unreadable = 0 }
+    self.readDiagnostics = self.readDiagnostics or {}
+    self.readDiagnostics[specID] = diagnostic
+    for _, id in ipairs(ids) do
         local info = C_Traits.GetConfigInfo(id)
         if info and id ~= C_ClassTalents.GetActiveConfigID() then
             local ok, export = pcall(C_Traits.GenerateImportString, id)
             rows[#rows + 1] = { id = id, spec = specID, name = info.name,
                 key = ok and type(export) == "string" and export ~= "" and export or nil }
+            if not rows[#rows].key then diagnostic.unreadable = diagnostic.unreadable + 1 end
+        elseif not info then
+            diagnostic.missing = diagnostic.missing + 1
+        else
+            diagnostic.active = diagnostic.active + 1
         end
     end
     return rows

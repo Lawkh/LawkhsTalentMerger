@@ -33,7 +33,7 @@ TM.Message = function(_, text) messages[#messages + 1] = text end
 TM.Refresh = function() end
 C_ClassTalents = {
     GetActiveConfigID = function() return 7 end,
-    GetConfigIDsBySpecID = function(spec) return ids[spec] end,
+    GetConfigIDsBySpecID = function(spec) return ids[spec or TM:SpecID()] end,
     RenameConfig = function(id, name)
         if renameFails then return false end
         builds[id].name = name; renamed[id] = name; return true
@@ -125,5 +125,27 @@ test("missing retail API is rejected", function()
     C_Traits.GenerateImportString = nil
     assert(not TM:Supported() and #TM:Read(71) == 0)
     C_Traits.GenerateImportString = api
+end)
+test("uses Blizzard current-spec helper when available", function()
+    PlayerUtil = { GetCurrentSpecID = function() return 72 end }
+    assert(TM:SpecID() == 72 and #TM:Read(TM:SpecID()) == 1)
+    PlayerUtil = nil
+end)
+test("read diagnostics distinguish empty lists from unavailable configs", function()
+    TM:Read(71)
+    assert(TM.readDiagnostics[71].raw == 7 and TM.readDiagnostics[71].active == 1)
+    assert(TM.readDiagnostics[71].unreadable == 1 and TM.readDiagnostics[71].missing == 0)
+    builds[2] = nil
+    TM:Read(71)
+    assert(TM.readDiagnostics[71].missing == 1)
+end)
+test("current specialization uses the same default query verified in game", function()
+    local api = C_ClassTalents.GetConfigIDsBySpecID
+    C_ClassTalents.GetConfigIDsBySpecID = function(spec)
+        if spec == 71 then return {} end
+        return api(spec)
+    end
+    assert(#TM:Read(71) == 6 and #TM:Read(72) == 1)
+    C_ClassTalents.GetConfigIDsBySpecID = api
 end)
 print(passed .. " tests passed")

@@ -303,9 +303,21 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
     TM:Refresh()
     command = command:lower():match("^%s*(.-)%s*$")
     if command == "status" then
-        TM:Message("v0.1.2 · API retail: " .. (TM:Supported() and "OK" or "no disponible") ..
+        TM:Message("v0.1.3 · API retail: " .. (TM:Supported() and "OK" or "no disponible") ..
             " · menú: " .. (TM.menuRegistered and "registrado" or "no disponible") ..
             " · builds: " .. #(TM.rows or {}) .. " · grupos: " .. #(TM.groups or {}))
+        if InCombatLockdown() then
+            TM:Message("Lectura pausada por combate: los contadores anteriores pueden estar desactualizados.")
+        elseif TM:Supported() then
+            local spec = TM:SpecID()
+            local diagnostic = TM.readDiagnostics and TM.readDiagnostics[spec]
+            local defaultIDs = C_ClassTalents.GetConfigIDsBySpecID() or {}
+            TM:Message("Spec: " .. tostring(spec) .. " · IDs sin spec: " .. #defaultIDs ..
+                " · IDs con spec: " .. (diagnostic and diagnostic.raw or 0) ..
+                " · sin información: " .. (diagnostic and diagnostic.missing or 0) ..
+                " · internos activos: " .. (diagnostic and diagnostic.active or 0) ..
+                " · sin exportación: " .. (diagnostic and diagnostic.unreadable or 0))
+        end
     elseif not TM:Supported() then TM:Message("API de talentos de Retail no disponible. Comprueba la versión del cliente.")
     elseif command == "nuke" then TM:ShowNuke()
     elseif command == "clean" then TM:ShowClean()
