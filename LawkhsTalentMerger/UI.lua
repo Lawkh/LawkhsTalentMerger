@@ -239,6 +239,29 @@ function TM:Attach()
     self.openButton = open
 end
 
+function TM:UpdateCombatState()
+    local combat = InCombatLockdown()
+    local ready = self:Supported() and not combat
+    if self.window then
+        self.mergeButton:SetEnabled(ready)
+        self.cleanButton:SetEnabled(ready)
+        self.nukeButton:SetEnabled(ready)
+        for _, widget in ipairs(self.widgets) do widget.merge:SetEnabled(ready) end
+        if combat then self.status:SetText("En combate: Merge, Clean y Nuke están bloqueados.") end
+    end
+    local f = self.dialog
+    if f and f:IsShown() then
+        local value = f.input:GetText()
+        f.accept:SetEnabled(ready and (not f.required or value == f.required) and
+            (not f.needsName or value:match("%S") ~= nil))
+        if combat then
+            f.error:SetText("Espera a salir de combate.")
+        elseif f.error:GetText() == "Espera a salir de combate." then
+            f.error:SetText("")
+        end
+    end
+end
+
 function TM:Refresh()
     self:CreateWindow()
     self:RegisterMenu()
@@ -248,10 +271,7 @@ function TM:Refresh()
         return
     end
     if InCombatLockdown() then
-        self.status:SetText("Espera a salir de combate para revisar las builds.")
-        self.mergeButton:SetEnabled(false)
-        self.cleanButton:SetEnabled(false)
-        self.nukeButton:SetEnabled(false)
+        self:UpdateCombatState()
         return
     end
     local specID = self:SpecID()
@@ -293,9 +313,7 @@ function TM:Refresh()
     self.content:SetHeight(math.max(y, 1))
     self.status:SetText(#self.rows .. " builds · " .. #self.groups .. " grupos repetidos" ..
         (unreadable > 0 and (" · " .. unreadable .. " sin leer") or ""))
-    self.mergeButton:SetEnabled(true)
-    self.cleanButton:SetEnabled(true)
-    self.nukeButton:SetEnabled(true)
+    self:UpdateCombatState()
     self:Attach()
 end
 
@@ -306,7 +324,9 @@ for _, event in ipairs({ "PLAYER_LOGIN", "ADDON_LOADED", "TRAIT_CONFIG_UPDATED",
     "TRAIT_CONFIG_DELETED", "TRAIT_CONFIG_LIST_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do events:RegisterEvent(event) end
 events:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_REGEN_DISABLED" and TM.dialog then TM.dialog:Hide() end
+    if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        TM:UpdateCombatState()
+    end
     if TM.pendingRefresh then return end
     TM.pendingRefresh = true
     C_Timer.After(0.1, function()
