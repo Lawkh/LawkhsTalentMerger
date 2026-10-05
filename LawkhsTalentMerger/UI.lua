@@ -191,8 +191,8 @@ function TM:ModifyTalentMenu(dropdown, root)
     local nuke = MenuUtil.CreateButton("Nuke", function() self:ShowNuke() end)
     local clean = MenuUtil.CreateButton("Clean", function() self:ShowClean() end)
     local ready = not InCombatLockdown()
-    merge:SetEnabled(ready and #groups > 0)
-    clean:SetEnabled(ready and #groups > 0)
+    merge:SetEnabled(ready)
+    clean:SetEnabled(ready)
     nuke:SetEnabled(ready)
     root:Insert(merge, 1)
     root:Insert(nuke, 2)
@@ -267,14 +267,14 @@ function TM:Refresh()
     line("Builds únicas / sin exportación")
     local unreadable = 0
     for _, row in ipairs(self.rows) do
-        if not row.key then unreadable = unreadable + 1 end
-        if not self.colors[row.id] then line(row.name .. (not row.key and " (no se pudo leer)" or "")) end
+        if not row.export then unreadable = unreadable + 1 end
+        if not self.colors[row.id] then line(row.name .. (not row.export and " (sin exportación para copia)" or "")) end
     end
     self.content:SetHeight(math.max(y, 1))
     self.status:SetText(#self.rows .. " builds · " .. #self.groups .. " grupos repetidos" ..
         (unreadable > 0 and (" · " .. unreadable .. " sin leer") or ""))
-    self.mergeButton:SetEnabled(#self.groups > 0)
-    self.cleanButton:SetEnabled(#self.groups > 0)
+    self.mergeButton:SetEnabled(true)
+    self.cleanButton:SetEnabled(true)
     self.nukeButton:SetEnabled(true)
     self:Attach()
 end
@@ -315,7 +315,8 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
                 " · IDs con spec: " .. (diagnostic and diagnostic.raw or 0) ..
                 " · sin información: " .. (diagnostic and diagnostic.missing or 0) ..
                 " · internos activos: " .. (diagnostic and diagnostic.active or 0) ..
-                " · sin exportación: " .. (diagnostic and diagnostic.unreadable or 0))
+                " · sin exportación: " .. (diagnostic and diagnostic.unreadable or 0) ..
+                " · comparadas por nodos: " .. (diagnostic and diagnostic.byNodes or 0))
         end
     elseif not TM:Supported() then TM:Message("API de talentos de Retail no disponible. Comprueba la versión del cliente.")
     elseif command == "nuke" then TM:ShowNuke()

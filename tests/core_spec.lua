@@ -169,4 +169,58 @@ test("empty C export falls back to Blizzard serializer for the saved config", fu
     PlayerSpellsFrame, ExportUtil = nil, nil
     C_Traits.GetTreeHash, C_Traits.GetLoadoutSerializationVersion = savedHash, savedVersion
 end)
+local function withNodes(fn)
+    local savedNodes, savedInfo = C_Traits.GetTreeNodes, C_Traits.GetNodeInfo
+    builds[1].treeIDs, builds[2].treeIDs = { 100 }, { 100 }
+    builds[1].nodes = {
+        [10] = { currentRank = 1, ranksPurchased = 1, activeEntry = { entryID = 101, rank = 1 } },
+        [20] = { currentRank = 1, ranksPurchased = 1, activeEntry = { entryID = 201, rank = 1 }, subTreeActive = true },
+        [30] = { currentRank = 1, ranksPurchased = 1, activeEntry = { entryID = 301, rank = 1 }, subTreeActive = false },
+    }
+    builds[2].nodes = {
+        [10] = { currentRank = 1, ranksPurchased = 1, activeEntry = { entryID = 101, rank = 1 } },
+        [20] = { currentRank = 1, ranksPurchased = 1, activeEntry = { entryID = 201, rank = 1 }, subTreeActive = true },
+        [30] = { currentRank = 2, ranksPurchased = 2, activeEntry = { entryID = 302, rank = 2 }, subTreeActive = false },
+    }
+    C_Traits.GetTreeNodes = function() return { 30, 10, 20 } end
+    C_Traits.GetNodeInfo = function(id, node) return builds[id].nodes[node] end
+    fn()
+    C_Traits.GetTreeNodes, C_Traits.GetNodeInfo = savedNodes, savedInfo
+end
+test("same chosen talents group despite differing exports and inactive hero choices", function()
+    withNodes(function()
+        builds[2].key = "DIFFERENT_SERIALIZATION"
+        local rows = TM:Read(71)
+        assert(rows[1].key == rows[2].key and rows[1].export ~= rows[2].export)
+        local groups = TM:Group(rows)
+        assert(#groups == 2 and #groups[1].rows == 2)
+        TM:Clean(groups)
+        assert(deleted[1] == 2)
+        assert(LawkhsTalentMergerDB.backups[1].builds[2].export == "DIFFERENT_SERIALIZATION")
+    end)
+end)
+test("different chosen entry is not a duplicate", function()
+    withNodes(function()
+        builds[2].nodes[10].activeEntry.entryID = 102
+        local rows = TM:Read(71)
+        assert(rows[1].key ~= rows[2].key)
+    end)
+end)
+test("different rank or active hero selection is not a duplicate", function()
+    withNodes(function()
+        builds[2].nodes[10].ranksPurchased = 2
+        local rows = TM:Read(71); assert(rows[1].key ~= rows[2].key)
+        builds[2].nodes[10].ranksPurchased = 1
+        builds[2].nodes[20].activeEntry.entryID = 202
+        rows = TM:Read(71); assert(rows[1].key ~= rows[2].key)
+    end)
+end)
+test("partial node data cannot produce an incomplete comparison signature", function()
+    withNodes(function()
+        builds[2].nodes[20] = nil
+        assert(not TM:Fingerprint(2, 71, builds[2]))
+        local rows = TM:Read(71)
+        assert(rows[1].key ~= rows[2].key and rows[2].key == "export:AAA")
+    end)
+end)
 print(passed .. " tests passed")

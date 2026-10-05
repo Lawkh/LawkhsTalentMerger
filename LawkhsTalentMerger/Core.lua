@@ -1,5 +1,5 @@
 local _, TM = ...
-TM.version = "0.1.4"
+TM.version = "0.1.5"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -51,8 +51,36 @@ function TM:Export(id, specID, info)
     return ok and type(value) == "string" and value ~= "" and value or nil
 end
 
--- Export strings contain class, spec, hero choices and ranks, but no loadout name.
--- Failed/empty exports must never be grouped as duplicates.
+function TM:Fingerprint(id, specID, info)
+    if not info.treeIDs or #info.treeIDs == 0 or not C_Traits.GetTreeNodes or not C_Traits.GetNodeInfo then return nil end
+    local ok, signature = pcall(function()
+        local parts, seen = {}, {}
+        for _, treeID in ipairs(info.treeIDs) do
+            local nodes = C_Traits.GetTreeNodes(treeID)
+            if not nodes or #nodes == 0 then return nil end
+            parts[#parts + 1] = "tree:" .. treeID
+            for _, nodeID in ipairs(nodes) do
+                if not seen[nodeID] then
+                    seen[nodeID] = true
+                    local node = C_Traits.GetNodeInfo(id, nodeID)
+                    if not node or type(node.currentRank) ~= "number" or type(node.ranksPurchased) ~= "number" then return nil end
+                    -- Old choices in an inactive hero subtree are not part of the build.
+                    if node.subTreeActive ~= false and node.currentRank > 0 then
+                        local entry = node.activeEntry
+                        if not entry or not entry.entryID or type(entry.rank) ~= "number" then return nil end
+                        parts[#parts + 1] = nodeID .. ":" .. entry.entryID .. ":" .. node.ranksPurchased .. ":" .. entry.rank
+                    end
+                end
+            end
+        end
+        table.sort(parts)
+        return "nodes:" .. specID .. ":" .. table.concat(parts, ";")
+    end)
+    return ok and signature or nil
+end
+
+-- Store comparison signatures separately from restorable talent exports.
+-- If node data is incomplete, exact export equality remains a safe fallback.
 function TM:Read(specID)
     local rows = {}
     if not specID or not self:Supported() or InCombatLockdown() then return rows end
@@ -63,16 +91,18 @@ function TM:Read(specID)
     if current then ids = C_ClassTalents.GetConfigIDsBySpecID()
     else ids = C_ClassTalents.GetConfigIDsBySpecID(specID) end
     ids = ids or {}
-    local diagnostic = { spec = specID, raw = #ids, missing = 0, active = 0, unreadable = 0 }
+    local diagnostic = { spec = specID, raw = #ids, missing = 0, active = 0, unreadable = 0, byNodes = 0 }
     self.readDiagnostics = self.readDiagnostics or {}
     self.readDiagnostics[specID] = diagnostic
     for _, id in ipairs(ids) do
         local info = C_Traits.GetConfigInfo(id)
         if info and id ~= C_ClassTalents.GetActiveConfigID() then
             local export = self:Export(id, specID, info)
+            local signature = self:Fingerprint(id, specID, info)
             rows[#rows + 1] = { id = id, spec = specID, name = info.name,
-                key = export }
-            if not rows[#rows].key then diagnostic.unreadable = diagnostic.unreadable + 1 end
+                key = signature or (export and "export:" .. export), export = export }
+            if signature then diagnostic.byNodes = diagnostic.byNodes + 1 end
+            if not export then diagnostic.unreadable = diagnostic.unreadable + 1 end
         elseif not info then
             diagnostic.missing = diagnostic.missing + 1
         else
@@ -150,8 +180,8 @@ function TM:Backup(rows, action)
     LawkhsTalentMergerDB.backups = LawkhsTalentMergerDB.backups or {}
     local backup = { time = time(), action = action, builds = {} }
     for _, row in ipairs(rows) do
-        if not row.key then return false, "No se pudo exportar " .. row.name .. ". No se ha borrado nada." end
-        backup.builds[#backup.builds + 1] = { name = row.name, spec = row.spec, export = row.key }
+        if not row.export then return false, "No se pudo exportar " .. row.name .. ". No se ha borrado nada." end
+        backup.builds[#backup.builds + 1] = { name = row.name, spec = row.spec, export = row.export }
     end
     table.insert(LawkhsTalentMergerDB.backups, 1, backup)
     while #LawkhsTalentMergerDB.backups > 10 do table.remove(LawkhsTalentMergerDB.backups) end
