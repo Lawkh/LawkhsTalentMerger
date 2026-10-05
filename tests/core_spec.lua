@@ -1,0 +1,111 @@
+local TM = {}
+assert(loadfile("LawkhsTalentMerger/Core.lua"))("LawkhsTalentMerger", TM)
+assert(loadfile("LawkhsTalentMerger/UI.lua")) -- Syntax validation without game UI.
+
+local builds, ids, combat, staged, renameFails, failedID
+local deleted, renamed, messages
+local function reset()
+    builds = {
+        [1] = { name = "Raid", key = "AAA" },
+        [2] = { name = "Mythic", key = "AAA" },
+        [3] = { name = "Raid", key = "BBB" },
+        [4] = { name = "PvP", key = "CCC" },
+        [5] = { name = "Arena", key = "CCC" },
+        [6] = { name = "Unreadable" },
+        [7] = { name = "Active", key = "AAA" },
+        [8] = { name = "Other spec", key = "DDD" },
+    }
+    ids = { [71] = { 1, 2, 3, 4, 5, 6, 7 }, [72] = { 8 } }
+    combat, staged, renameFails, failedID = false, false, false, nil
+    deleted, renamed, messages = {}, {}, {}
+    LawkhsTalentMergerDB = nil
+end
+function InCombatLockdown() return combat end
+function GetSpecialization() return 1 end
+function GetSpecializationInfo(i) return i == 1 and 71 or 72 end
+function GetNumSpecializations() return 2 end
+function time() return 123 end
+TM.Message = function(_, text) messages[#messages + 1] = text end
+TM.Refresh = function() end
+C_ClassTalents = {
+    GetActiveConfigID = function() return 7 end,
+    GetConfigIDsBySpecID = function(spec) return ids[spec] end,
+    RenameConfig = function(id, name)
+        if renameFails then return false end
+        builds[id].name = name; renamed[id] = name; return true
+    end,
+    DeleteConfig = function(id)
+        if id == failedID then return false end
+        deleted[#deleted + 1] = id
+        builds[id] = nil
+        for _, list in pairs(ids) do
+            for i, item in ipairs(list) do if item == id then table.remove(list, i); break end end
+        end
+        return true
+    end,
+}
+C_Traits = {
+    GetConfigInfo = function(id) return builds[id] end,
+    GenerateImportString = function(id) return builds[id].key end,
+    ConfigHasStagedChanges = function() return staged end,
+}
+local passed = 0
+local function test(name, fn)
+    reset(); fn(); passed = passed + 1; print("PASS " .. name)
+end
+test("groups by talents, preserves API order, excludes active and unreadable", function()
+    local groups, colors = TM:Group(TM:Read(71))
+    assert(#groups == 2 and groups[1].rows[1].id == 1)
+    assert(colors[1] == colors[2] and colors[1] ~= colors[4])
+    assert(not colors[3] and not colors[6] and not colors[7])
+    assert(TM:SuggestedName(groups[1]) == "Raid/Mythic")
+end)
+test("clean retains first and unique builds, backs up exports", function()
+    TM:Clean(TM:Group(TM:Read(71)))
+    assert(#deleted == 2 and deleted[1] == 2 and deleted[2] == 5)
+    assert(builds[1] and builds[3] and builds[4] and builds[6])
+    assert(#LawkhsTalentMergerDB.backups[1].builds == 4)
+end)
+test("merge renames survivor and deletes only its group", function()
+    local groups = TM:Group(TM:Read(71))
+    TM:Merge(groups[1], " Raid/Mythic ")
+    assert(renamed[1] == "Raid/Mythic" and #deleted == 1 and deleted[1] == 2)
+end)
+test("failed rename never deletes", function()
+    renameFails = true
+    TM:Merge(TM:Group(TM:Read(71))[1], "Merged")
+    assert(#deleted == 0)
+end)
+test("stale preview never deletes", function()
+    local groups = TM:Group(TM:Read(71))
+    builds[2].key = "CHANGED"
+    TM:Clean(groups)
+    assert(#deleted == 0)
+end)
+test("combat and staged talents block mutations", function()
+    local groups = TM:Group(TM:Read(71))
+    combat = true; TM:Clean(groups); combat = false
+    staged = true; TM:Merge(groups[1], "Merged")
+    assert(#deleted == 0 and not next(renamed))
+end)
+test("nuke requires exact token and a readable backup", function()
+    local rows = TM:AllRows()
+    TM:Nuke(rows, "nuke"); assert(#deleted == 0)
+    TM:Nuke(rows, "NUKE"); assert(#deleted == 0)
+    builds[6].key = "EEE"
+    TM:Nuke(TM:AllRows(), "NUKE")
+    assert(#deleted == 7 and builds[7])
+end)
+test("nuke rejects builds added after preview", function()
+    builds[6].key = "EEE"
+    local rows = TM:AllRows()
+    builds[9] = { name = "New", key = "FFF" }; ids[72][2] = 9
+    TM:Nuke(rows, "NUKE"); assert(#deleted == 0)
+end)
+test("partial deletion failures are reported", function()
+    failedID = 2
+    TM:Clean(TM:Group(TM:Read(71)))
+    assert(#deleted == 1 and deleted[1] == 5 and builds[2])
+    assert(messages[1]:find("Mythic"))
+end)
+print(passed .. " tests passed")

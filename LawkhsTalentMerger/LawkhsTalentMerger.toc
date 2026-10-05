@@ -1,0 +1,8 @@
+## Interface: 120100
+## Title: Lawkh's Talent Merger
+## Notes: Agrupa, fusiona y limpia builds de talentos repetidas.
+## Author: Lawkh
+## Version: 0.1.0
+## SavedVariablesPerCharacter: LawkhsTalentMergerDB
+Core.lua
+UI.lua
