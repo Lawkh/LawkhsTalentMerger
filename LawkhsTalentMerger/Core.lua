@@ -1,5 +1,5 @@
 local _, TM = ...
-TM.version = "0.1.5"
+TM.version = "0.1.6"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -151,6 +151,9 @@ end
 function TM:Writable()
     if not self:Supported() then return false, "Este addon necesita WoW Retail y sus API de talentos." end
     if InCombatLockdown() then return false, "Espera a salir de combate." end
+    if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then
+        return false, "Resucita antes de modificar las builds."
+    end
     local active = C_ClassTalents.GetActiveConfigID()
     if active and C_Traits.ConfigHasStagedChanges(active) then
         return false, "Aplica o deshaz los cambios de talentos pendientes primero."
@@ -196,8 +199,10 @@ function TM:DeleteRows(rows)
             deleted = deleted + 1
         else failures[#failures + 1] = row.name end
     end
-    self:Message("Borradas: " .. deleted .. "." .. (#failures > 0 and (" No se pudieron borrar: " .. table.concat(failures, ", ")) or ""))
+    local message = "Borradas: " .. deleted .. "." .. (#failures > 0 and (" No se pudieron borrar: " .. table.concat(failures, ", ")) or "")
+    self:Message(message)
     self:Refresh()
+    return #failures == 0, message
 end
 
 function TM:Clean(groups)
@@ -210,24 +215,25 @@ function TM:Clean(groups)
     end
     local ok, reason = self:Validate(all)
     if ok then ok, reason = self:Backup(all, "Clean") end
-    if not ok then self:Message(reason); return end
-    self:DeleteRows(remove)
+    if not ok then self:Message(reason); return false, reason end
+    return self:DeleteRows(remove)
 end
 
 function TM:Merge(group, name)
     name = name:match("^%s*(.-)%s*$")
-    if name == "" or name:find("[|%c]") then self:Message("Escribe un nombre válido sin códigos de color."); return end
+    if name == "" or name:find("[|%c]") then return false, "Escribe un nombre válido sin códigos de color." end
     local ok, reason = self:Validate(group.rows)
     if ok then ok, reason = self:Backup(group.rows, "Merge") end
-    if not ok then self:Message(reason); return end
+    if not ok then self:Message(reason); return false, reason end
     -- Reuse the first identical config: avoids the loadout cap and async creation,
     -- and preserves its equipment/action-bar settings.
     if not C_ClassTalents.RenameConfig(group.rows[1].id, name) then
-        self:Message("No se pudo guardar el nombre. No se ha borrado ninguna build."); return
+        local reason = "WoW no pudo guardar el nombre. Prueba otro nombre. No se ha borrado ninguna build."
+        self:Message(reason); return false, reason
     end
     local remove = {}
     for i = 2, #group.rows do remove[#remove + 1] = group.rows[i] end
-    self:DeleteRows(remove)
+    return self:DeleteRows(remove)
 end
 
 function TM:AllRows()
@@ -242,11 +248,11 @@ function TM:AllRows()
 end
 
 function TM:Nuke(rows, token)
-    if token ~= "NUKE" then self:Message("Debes escribir exactamente NUKE."); return end
+    if token ~= "NUKE" then return false, "Debes escribir exactamente NUKE." end
     local current = self:AllRows()
-    if #current ~= #rows then self:Message("La lista ha cambiado. Confirma de nuevo."); return end
+    if #current ~= #rows then return false, "La lista ha cambiado. Confirma de nuevo." end
     local ok, reason = self:Validate(rows)
     if ok then ok, reason = self:Backup(rows, "Nuke") end
-    if not ok then self:Message(reason); return end
-    self:DeleteRows(rows)
+    if not ok then self:Message(reason); return false, reason end
+    return self:DeleteRows(rows)
 end

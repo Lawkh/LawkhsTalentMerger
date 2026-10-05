@@ -2,7 +2,7 @@
 ## Title: Lawkh's Talent Merger
 ## Notes: Agrupa, fusiona y limpia builds de talentos repetidas.
 ## Author: Lawkh
-## Version: 0.1.5
+## Version: 0.1.6
 ## OptionalDeps: TalentTreeTweaks, RaiderIO
 ## SavedVariablesPerCharacter: LawkhsTalentMergerDB
 Core.lua

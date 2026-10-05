@@ -19,6 +19,7 @@ C_Traits = {
 }
 function InCombatLockdown() return combat end
 function UnitClass() return "Warrior", "WARRIOR", 1 end
+function time() return 123 end
 function GetSpecializationInfoForSpecID() return 71, "Arms" end
 C_SpecializationInfo = {
     GetSpecialization = function() return 1 end,
@@ -46,9 +47,11 @@ end
 local methods = {}
 for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFrameStrata", "SetClampedToScreen",
     "SetMovable", "EnableMouse", "RegisterForDrag", "SetBackdropColor", "SetJustifyH", "SetScrollChild",
-    "SetAutoFocus", "SetMaxLetters", "SetFocus", "HighlightText", "SetVerticalScroll", "StartMoving", "StopMovingOrSizing" }) do
+    "SetAutoFocus", "SetMaxLetters", "SetFocus", "HighlightText", "SetVerticalScroll", "StartMoving", "StopMovingOrSizing",
+    "RegisterForClicks", "SetToplevel", "SetFrameLevel", "SetTextColor" }) do
     methods[name] = function() end
 end
+function methods:GetFrameLevel() return 1 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
 function methods:HookScript(name, fn) self.hooks[name] = fn end
 function methods:RegisterEvent(name) self.events[name] = true end
@@ -156,6 +159,32 @@ test("combat closes a pending confirmation, enables again after combat", functio
     assert(not TM.dialog:IsShown() and not TM.cleanButton.enabled)
     combat = false; events.scripts.OnEvent(events, "PLAYER_REGEN_ENABLED"); flush()
     assert(TM.cleanButton.enabled and TM.nukeButton.enabled)
+end)
+test("Confirm performs real Merge callback then closes on success", function()
+    local rename, delete, getIDs = C_ClassTalents.RenameConfig, C_ClassTalents.DeleteConfig, C_ClassTalents.GetConfigIDsBySpecID
+    C_ClassTalents.RenameConfig = function(id, name) builds[id].name = name; return true end
+    C_ClassTalents.DeleteConfig = function(id) builds[id] = nil; return true end
+    C_ClassTalents.GetConfigIDsBySpecID = function() return builds[2] and { 1, 2 } or { 1 } end
+    TM:Refresh(); TM:ShowMerge()
+    TM.dialog.input:SetText("Combined")
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
+    assert(not TM.dialog:IsShown() and builds[1].name == "Combined" and not builds[2])
+    assert(LawkhsTalentMergerDB.backups[1].builds[1].export == "AAA")
+    builds[1].name = "Raid"; builds[2] = { name = "Mythic", key = "AAA" }
+    C_ClassTalents.RenameConfig, C_ClassTalents.DeleteConfig, C_ClassTalents.GetConfigIDsBySpecID = rename, delete, getIDs
+    TM:Refresh()
+end)
+test("dead player sees reason in dialog after Confirm", function()
+    TM:ShowMerge()
+    UnitIsDeadOrGhost = function() return true end
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
+    assert(TM.dialog:IsShown() and TM.dialog.error:GetText():find("Resucita"))
+    UnitIsDeadOrGhost = nil
+end)
+test("API exceptions are visible and keep the confirmation open", function()
+    TM:ShowMerge()
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
+    assert(TM.dialog:IsShown() and TM.dialog.error:GetText():find("Unexpected rename"))
 end)
 test("Classic skips UI initialization", function()
     local before = #frames

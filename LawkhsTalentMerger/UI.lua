@@ -5,6 +5,7 @@ local function Button(parent, label, width, onClick)
     local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     button:SetSize(width, 25)
     button:SetText(label)
+    button:RegisterForClicks("LeftButtonUp")
     button:SetScript("OnClick", onClick)
     return button
 end
@@ -66,6 +67,8 @@ function TM:Dialog(title, report, initial, required, callback)
         f:SetSize(570, 440)
         f:SetPoint("CENTER")
         f:SetFrameStrata("FULLSCREEN_DIALOG")
+        f:SetToplevel(true)
+        f:SetFrameLevel(self.window:GetFrameLevel() + 20)
         f:EnableMouse(true)
         f:SetBackdrop(self.window:GetBackdrop())
         f:SetBackdropColor(0.05, 0.05, 0.07, 1)
@@ -73,7 +76,7 @@ function TM:Dialog(title, report, initial, required, callback)
         f.title:SetPoint("TOPLEFT", 20, -20)
         local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", 20, -55)
-        scroll:SetPoint("BOTTOMRIGHT", -42, 105)
+        scroll:SetPoint("BOTTOMRIGHT", -42, 150)
         local content = CreateFrame("Frame", nil, scroll)
         content:SetWidth(500)
         scroll:SetScrollChild(content)
@@ -87,12 +90,28 @@ function TM:Dialog(title, report, initial, required, callback)
         f.input:SetPoint("BOTTOMLEFT", 25, 65)
         f.input:SetAutoFocus(false)
         f.input:SetMaxLetters(0)
+        f.error = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        f.error:SetPoint("BOTTOMLEFT", 20, 105)
+        f.error:SetWidth(500)
+        f.error:SetHeight(32)
+        f.error:SetJustifyH("LEFT")
+        f.error:SetTextColor(1, 0.35, 0.35)
         f.accept = Button(f, "Confirmar", 120, function()
             local value = f.input:GetText()
-            if f.required and value ~= f.required then return end
-            if f.needsName and not value:match("%S") then return end
+            if f.required and value ~= f.required then f.error:SetText("Escribe exactamente " .. f.required .. "."); return end
+            if f.needsName and not value:match("%S") then f.error:SetText("Escribe un nombre para la build."); return end
+            if InCombatLockdown() then f.error:SetText("Espera a salir de combate."); return end
+            local callback = f.callback
+            f.accept:SetEnabled(false)
+            local ok, result, reason = pcall(callback, value)
+            if not ok or result == false then
+                local message = not ok and ("Error al confirmar: " .. tostring(result)) or reason or "No se pudo completar la operación."
+                f.error:SetText(message)
+                self:Message(message)
+                f.accept:SetEnabled(true)
+                return
+            end
             f:Hide()
-            f.callback(value)
         end)
         f.accept:SetPoint("BOTTOMRIGHT", -20, 20)
         local cancel = Button(f, "Cancelar", 120, function() f:Hide() end)
@@ -107,6 +126,7 @@ function TM:Dialog(title, report, initial, required, callback)
     end
     local f = self.dialog
     f.callback, f.required, f.needsName = callback, required, initial ~= nil and not required
+    f.error:SetText("")
     f.title:SetText(title)
     f.report:SetText(report)
     f.content:SetHeight(math.max(1, f.report:GetStringHeight() + 12))
@@ -134,7 +154,7 @@ function TM:ShowMerge(group)
     self:Dialog("Merge — nombre de la build resultante",
         "Estas builds tienen los mismos talentos:\n\n" .. table.concat(names, "\n") ..
         "\n\nSe renombrará la primera y se borrarán las demás. Se conservarán los talentos y los ajustes de la primera.\n\nNombre sugerido (puedes editarlo):",
-        self:SuggestedName(group), nil, function(name) self:Merge(group, name) end)
+        self:SuggestedName(group), nil, function(name) return self:Merge(group, name) end)
 end
 
 function TM:ShowClean()
@@ -149,7 +169,7 @@ function TM:ShowClean()
         lines[#lines + 1] = ""
     end
     self:Dialog("Clean — revisar y confirmar", table.concat(lines, "\n"), nil, nil,
-        function() self:Clean(groups) end)
+        function() return self:Clean(groups) end)
 end
 
 function TM:ShowNuke()
@@ -164,7 +184,7 @@ function TM:ShowNuke()
     end
     lines[#lines + 1] = "\nEscribe exactamente NUKE para confirmar."
     self:Dialog("Nuke — borrar todas las builds", table.concat(lines, "\n"), "", "NUKE",
-        function(token) self:Nuke(rows, token) end)
+        function(token) return self:Nuke(rows, token) end)
 end
 
 function TM:ModifyTalentMenu(dropdown, root)

@@ -92,6 +92,12 @@ test("combat and staged talents block mutations", function()
     staged = true; TM:Merge(groups[1], "Merged")
     assert(#deleted == 0 and not next(renamed))
 end)
+test("dead player gets an explicit reason and no mutation", function()
+    UnitIsDeadOrGhost = function() return true end
+    local ok, reason = TM:Merge(TM:Group(TM:Read(71))[1], "Merged")
+    assert(ok == false and reason:find("Resucita") and #deleted == 0 and not next(renamed))
+    UnitIsDeadOrGhost = nil
+end)
 test("nuke requires exact token and a readable backup", function()
     local rows = TM:AllRows()
     TM:Nuke(rows, "nuke"); assert(#deleted == 0)
