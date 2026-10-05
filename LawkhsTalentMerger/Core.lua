@@ -1,5 +1,5 @@
 local _, TM = ...
-TM.version = "0.2.0"
+TM.version = "0.2.1"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -148,7 +148,8 @@ function TM:SuggestedName(group)
     return table.concat(names, "/")
 end
 
-function TM:Writable()
+function TM:Writable(allowOperation)
+    if self.operation and not allowOperation then return false, "Hay un borrado en curso. Espera a que termine." end
     if not self:Supported() then return false, "Este addon necesita WoW Retail y sus API de talentos." end
     if InCombatLockdown() then return false, "Espera a salir de combate." end
     if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then
@@ -161,8 +162,8 @@ function TM:Writable()
     return true
 end
 
-function TM:Validate(rows)
-    local ok, reason = self:Writable()
+function TM:Validate(rows, allowOperation)
+    local ok, reason = self:Writable(allowOperation)
     if not ok then return false, reason end
     local cached = {}
     for _, row in ipairs(rows) do
@@ -191,18 +192,65 @@ function TM:Backup(rows, action)
     return true
 end
 
-function TM:DeleteRows(rows)
-    local deleted, failures = 0, {}
-    for _, row in ipairs(rows) do
-        if InCombatLockdown() then failures[#failures + 1] = row.name .. " (combate)"
-        elseif C_ClassTalents.DeleteConfig(row.id) then
-            deleted = deleted + 1
-        else failures[#failures + 1] = row.name end
-    end
-    local message = "Borradas: " .. deleted .. "." .. (#failures > 0 and (" No se pudieron borrar: " .. table.concat(failures, ", ")) or "")
-    self:Message(message)
+function TM:FinishDeletion(op, success, reason)
+    if self.operation ~= op then return end
+    self.operation = nil
+    op.success = success
+    op.message = (reason and (reason .. " ") or "") .. "Borradas: " .. op.deleted .. "."
+    if not success then op.message = op.message .. " Pendientes: " .. (#op.rows - op.deleted) .. "." end
+    self:Message(op.message)
     self:Refresh()
-    return #failures == 0, message
+    if self.DeletionFinished then self:DeletionFinished(op) end
+end
+
+function TM:ConfirmDeletion(id)
+    local op = self.operation
+    if not op or op.awaiting ~= id then return end
+    op.awaiting = nil
+    op.deleted = op.deleted + 1
+    op.index = op.index + 1
+    op.retries = 0
+    if self.UpdateCombatState then self:UpdateCombatState() end
+    C_Timer.After(0.2, function() self:AdvanceDeletion(op) end)
+end
+
+function TM:AdvanceDeletion(op)
+    if self.operation ~= op or op.awaiting then return end
+    if op.cancelled then self:FinishDeletion(op, false, "Borrado detenido."); return end
+    local row = op.rows[op.index]
+    if not row then self:FinishDeletion(op, true); return end
+    local valid, reason = self:Validate({ row }, true)
+    if not valid then self:FinishDeletion(op, false, reason); return end
+    op.awaiting = row.id
+    local ok, accepted = pcall(C_ClassTalents.DeleteConfig, row.id)
+    if self.operation ~= op then return end
+    if not ok or not accepted then
+        op.awaiting = nil
+        op.retries = op.retries + 1
+        if op.retries <= 3 then
+            C_Timer.After(0.4, function() self:AdvanceDeletion(op) end)
+        else
+            self:FinishDeletion(op, false, "WoW no pudo borrar «" .. row.name .. "». No se ha continuado con las siguientes builds.")
+        end
+        return
+    end
+    if self.UpdateCombatState then self:UpdateCombatState() end
+    -- API success means the request was accepted; wait for server confirmation.
+    if not C_Traits.GetConfigInfo(row.id) then self:ConfirmDeletion(row.id); return end
+    C_Timer.After(5, function()
+        if self.operation ~= op or op.awaiting ~= row.id then return end
+        if not C_Traits.GetConfigInfo(row.id) then self:ConfirmDeletion(row.id)
+        else self:FinishDeletion(op, false, "WoW no confirmó el borrado de «" .. row.name .. "».") end
+    end)
+end
+
+function TM:DeleteRows(rows)
+    if self.operation then return false, "Hay un borrado en curso. Espera a que termine." end
+    local op = { rows = rows, index = 1, deleted = 0, retries = 0 }
+    self.operation = op
+    self:AdvanceDeletion(op)
+    if self.operation == op then return "pending" end
+    return op.success, op.message
 end
 
 function TM:Clean(groups)
@@ -249,6 +297,8 @@ end
 
 function TM:Nuke(rows, token)
     if token ~= "NUKE" then return false, "Debes escribir exactamente NUKE." end
+    local writable, reason = self:Writable()
+    if not writable then return false, reason end
     local current = self:AllRows()
     if #current ~= #rows then return false, "La lista ha cambiado. Confirma de nuevo." end
     local ok, reason = self:Validate(rows)

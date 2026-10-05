@@ -64,6 +64,7 @@ function TM:CreateWindow()
     hint:SetText("Merge y Clean: especialización actual. Nuke: todas las especializaciones.")
     self.listHint = hint
     frame:SetScript("OnHide", function()
+        if self.operation then self.operation.cancelled = true end
         if self.dialog then
             self.dialog:Hide()
             self.dialog.input:ClearFocus()
@@ -121,6 +122,7 @@ function TM:Dialog(title, report, initial, required, callback)
         f.error:SetJustifyH("LEFT")
         f.error:SetTextColor(1, 0.35, 0.35)
         f.accept = Button(f, "Confirmar", 120, function()
+            if self.operation or not f.callback then return end
             local value = f.input:GetText()
             if f.required and value ~= f.required then f.error:SetText("Escribe exactamente " .. f.required .. "."); return end
             if f.needsName and not value:match("%S") then f.error:SetText("Escribe un nombre para la build."); return end
@@ -135,22 +137,35 @@ function TM:Dialog(title, report, initial, required, callback)
                 f.accept:SetEnabled(true)
                 return
             end
+            if result == "pending" then
+                f.operation = self.operation
+                self:UpdateCombatState()
+                return
+            end
             self:ShowList(reason or "Operación completada.")
         end)
         f.accept:SetPoint("BOTTOMRIGHT", 0, 0)
-        f.back = Button(f, "Volver", 120, function() self:ShowList() end)
+        f.back = Button(f, "Volver", 120, function()
+            if self.operation then
+                self.operation.cancelled = true
+                if not self.operation.awaiting then self:AdvanceDeletion(self.operation) end
+                self:UpdateCombatState()
+            else self:ShowList() end
+        end)
         f.back:SetPoint("BOTTOMLEFT", 0, 0)
         f.input:SetScript("OnTextChanged", function(box)
-            f.accept:SetEnabled(not InCombatLockdown() and
+            f.accept:SetEnabled(not self.operation and f.callback ~= nil and not InCombatLockdown() and
                 (not f.required or box:GetText() == f.required) and
                 (not f.needsName or box:GetText():match("%S") ~= nil))
         end)
-        f.input:SetScript("OnEscapePressed", function() self:ShowList() end)
+        f.input:SetScript("OnEscapePressed", function() f.back:GetScript("OnClick")(f.back) end)
     end
     local f = self.dialog
     self.view = "confirm"
     self.listPanel:Hide()
     f.callback, f.required, f.needsName = callback, required, initial ~= nil and not required
+    f.operation = nil
+    f.back:SetText("Volver")
     f.error:SetText("")
     f.title:SetText(title)
     f.report:SetText(report)
@@ -167,6 +182,7 @@ function TM:Dialog(title, report, initial, required, callback)
 end
 
 function TM:ShowMerge(group)
+    if self.operation then self:Message("Hay un borrado en curso. Espera a que termine."); return end
     if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
     if not group then
         self:ShowList()
@@ -183,6 +199,7 @@ function TM:ShowMerge(group)
 end
 
 function TM:ShowClean()
+    if self.operation then self:Message("Hay un borrado en curso. Espera a que termine."); return end
     if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
     self:CreateWindow()
     self:Refresh()
@@ -198,6 +215,7 @@ function TM:ShowClean()
 end
 
 function TM:ShowNuke()
+    if self.operation then self:Message("Hay un borrado en curso. Espera a que termine."); return end
     if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
     self:CreateWindow()
     local rows = self:AllRows()
@@ -235,7 +253,7 @@ function TM:ModifyTalentMenu(dropdown, root)
     end)
     local nuke = MenuUtil.CreateButton("Nuke", function() self:ShowNuke() end)
     local clean = MenuUtil.CreateButton("Clean", function() self:ShowClean() end)
-    local ready = not InCombatLockdown()
+    local ready = not InCombatLockdown() and not self.operation
     merge:SetEnabled(ready)
     clean:SetEnabled(ready)
     nuke:SetEnabled(ready)
@@ -266,7 +284,7 @@ end
 
 function TM:UpdateCombatState()
     local combat = InCombatLockdown()
-    local ready = self:Supported() and not combat
+    local ready = self:Supported() and not combat and not self.operation
     if self.window then
         self.mergeButton:SetEnabled(ready)
         self.cleanButton:SetEnabled(ready)
@@ -277,14 +295,32 @@ function TM:UpdateCombatState()
     local f = self.dialog
     if f and f:IsShown() then
         local value = f.input:GetText()
-        f.accept:SetEnabled(ready and (not f.required or value == f.required) and
+        f.accept:SetEnabled(ready and f.callback ~= nil and (not f.required or value == f.required) and
             (not f.needsName or value:match("%S") ~= nil))
-        if combat then
+        if self.operation then
+            f.error:SetText("Borrando builds: " .. self.operation.deleted .. "/" .. #self.operation.rows ..
+                (self.operation.cancelled and " · deteniendo…" or " · espera a que WoW confirme."))
+            f.back:SetText("Detener")
+        elseif combat then
             f.error:SetText("Espera a salir de combate.")
         elseif f.error:GetText() == "Espera a salir de combate." then
             f.error:SetText("")
         end
     end
+end
+
+function TM:DeletionFinished(op)
+    local f = self.dialog
+    if f and f.operation == op then
+        f.operation = nil
+        f.back:SetText("Volver")
+        if op.success then self:ShowList(op.message)
+        else
+            f.callback = nil
+            f.accept:SetEnabled(false)
+            f.error:SetText(op.message .. " Vuelve a la lista para revisar lo que queda.")
+        end
+    elseif self.listHint then self.listHint:SetText(op.message) end
 end
 
 function TM:Refresh()
@@ -350,7 +386,8 @@ local events = CreateFrame("Frame")
 for _, event in ipairs({ "PLAYER_LOGIN", "ADDON_LOADED", "TRAIT_CONFIG_UPDATED", "TRAIT_CONFIG_CREATED",
     "TRAIT_CONFIG_DELETED", "TRAIT_CONFIG_LIST_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do events:RegisterEvent(event) end
-events:SetScript("OnEvent", function(_, event)
+events:SetScript("OnEvent", function(_, event, ...)
+    if event == "TRAIT_CONFIG_DELETED" then TM:ConfirmDeletion(...) end
     if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         TM:UpdateCombatState()
     end

@@ -53,6 +53,7 @@ for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFram
 end
 function methods:GetFrameLevel() return 1 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
+function methods:GetScript(name) return self.scripts[name] end
 function methods:HookScript(name, fn) self.hooks[name] = fn end
 function methods:RegisterEvent(name) self.events[name] = true end
 function methods:SetBackdrop(value) self.backdrop = value end
@@ -194,6 +195,8 @@ test("Confirm performs real Merge callback then returns to list in same window",
     TM:Refresh(); TM:ShowMerge()
     TM.dialog.input:SetText("Combined")
     TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
+    assert(TM.operation and not TM.dialog.accept.enabled)
+    flush()
     assert(not TM.dialog:IsShown() and builds[1].name == "Combined" and not builds[2])
     assert(TM.window:IsShown() and TM.listPanel:IsShown() and TM.view == "list")
     assert(TM.listHint:GetText():find("Borradas"))
@@ -244,6 +247,28 @@ test("closing and reopening the window resets to list safely", function()
     assert(TM.dialog.callback == nil and not TM.dialog:IsShown() and TM.view == "list")
     TM:ShowList()
     assert(TM.window:IsShown() and TM.listPanel:IsShown() and not TM.dialog:IsShown())
+end)
+test("Nuke shows progress and blocks duplicate clicks until server events complete", function()
+    local delete, getIDs = C_ClassTalents.DeleteConfig, C_ClassTalents.GetConfigIDsBySpecID
+    local requested = {}
+    C_ClassTalents.DeleteConfig = function(id) requested[#requested + 1] = id; return true end
+    C_ClassTalents.GetConfigIDsBySpecID = function()
+        local ids = {}; for id = 1, 2 do if builds[id] then ids[#ids + 1] = id end end; return ids
+    end
+    timers = {}
+    TM:ShowNuke(); TM.dialog.input:SetText("NUKE")
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
+    assert(#requested == 1 and TM.dialog:IsShown() and not TM.dialog.accept.enabled)
+    assert(TM.dialog.error:GetText():find("0/2") and TM.dialog.back:GetText() == "Detener")
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
+    TM:ShowNuke(); assert(#requested == 1 and TM.dialog.operation == TM.operation)
+    builds[1] = nil; events.scripts.OnEvent(events, "TRAIT_CONFIG_DELETED", 1); flush()
+    assert(#requested == 2 and TM.operation.deleted == 1)
+    builds[2] = nil; events.scripts.OnEvent(events, "TRAIT_CONFIG_DELETED", 2); flush()
+    assert(not TM.operation and TM.view == "list" and TM.listHint:GetText():find("Borradas: 2"))
+    builds[1], builds[2] = { name = "Raid", key = "AAA" }, { name = "Mythic", key = "AAA" }
+    C_ClassTalents.DeleteConfig, C_ClassTalents.GetConfigIDsBySpecID = delete, getIDs
+    TM:Refresh()
 end)
 test("Classic skips UI initialization", function()
     local before = #frames

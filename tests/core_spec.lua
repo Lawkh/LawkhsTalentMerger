@@ -20,6 +20,7 @@ local function reset()
     combat, staged, renameFails, failedID = false, false, false, nil
     deleted, renamed, messages = {}, {}, {}
     LawkhsTalentMergerDB = nil
+    TM.operation = nil
 end
 function InCombatLockdown() return combat end
 function UnitClass() return "Warrior", "WARRIOR", 1 end
@@ -29,6 +30,7 @@ C_SpecializationInfo = {
     GetNumSpecializationsForClassID = function() return 2 end,
 }
 function time() return 123 end
+C_Timer = { After = function(_, callback) callback() end }
 TM.Message = function(_, text) messages[#messages + 1] = text end
 TM.Refresh = function() end
 C_ClassTalents = {
@@ -112,11 +114,85 @@ test("nuke rejects builds added after preview", function()
     builds[9] = { name = "New", key = "FFF" }; ids[72][2] = 9
     TM:Nuke(rows, "NUKE"); assert(#deleted == 0)
 end)
-test("partial deletion failures are reported", function()
+test("persistent deletion refusal stops the queue and reports remaining builds", function()
     failedID = 2
     TM:Clean(TM:Group(TM:Read(71)))
-    assert(#deleted == 1 and deleted[1] == 5 and builds[2])
+    assert(#deleted == 0 and builds[2] and builds[5])
     assert(messages[1]:find("Mythic"))
+end)
+local function asyncDeletes(fn)
+    local oldTimer, oldDelete = C_Timer, C_ClassTalents.DeleteConfig
+    local timers, requests = {}, {}
+    C_Timer = { After = function(delay, callback) timers[#timers + 1] = { delay, callback } end }
+    C_ClassTalents.DeleteConfig = function(id) requests[#requests + 1] = id; return true end
+    local function tick(delay)
+        for i, timer in ipairs(timers) do
+            if timer[1] == delay then table.remove(timers, i); timer[2](); return end
+        end
+        error("No timer for " .. delay)
+    end
+    local function confirm(id) oldDelete(id); TM:ConfirmDeletion(id) end
+    fn(requests, tick, confirm)
+    C_Timer, C_ClassTalents.DeleteConfig = oldTimer, oldDelete
+end
+test("Nuke waits for each server deletion before requesting the next", function()
+    builds[6].key = "EEE"
+    asyncDeletes(function(requests, tick, confirm)
+        local rows = TM:AllRows()
+        assert(TM:Nuke(rows, "NUKE") == "pending" and #requests == 1 and TM.operation.deleted == 0)
+        assert(TM:Nuke(TM:AllRows(), "NUKE") == false and #requests == 1)
+        TM:ConfirmDeletion(999); assert(TM.operation.deleted == 0)
+        for i, row in ipairs(rows) do
+            assert(#requests == i and requests[i] == row.id)
+            confirm(row.id)
+            TM:ConfirmDeletion(row.id) -- duplicate event must not double-count
+            assert(TM.operation.deleted == i)
+            tick(0.2)
+        end
+        assert(not TM.operation and #deleted == #rows and builds[7])
+    end)
+end)
+test("accepted request timeout stops instead of counting an unconfirmed deletion", function()
+    asyncDeletes(function(requests, tick)
+        TM:Clean(TM:Group(TM:Read(71)))
+        tick(5)
+        assert(not TM.operation and #requests == 1 and #deleted == 0)
+        assert(messages[1]:find("no confirmó") and messages[1]:find("Pendientes: 2"))
+    end)
+end)
+test("combat between confirmations prevents further deletion requests", function()
+    asyncDeletes(function(requests, tick, confirm)
+        TM:Clean(TM:Group(TM:Read(71)))
+        confirm(2); combat = true; tick(0.2)
+        assert(not TM.operation and #requests == 1 and builds[5])
+    end)
+end)
+test("changed queued build is checked before the next deletion", function()
+    asyncDeletes(function(requests, tick, confirm)
+        TM:Clean(TM:Group(TM:Read(71)))
+        confirm(2); builds[5].key = "CHANGED"; tick(0.2)
+        assert(not TM.operation and #requests == 1 and builds[5])
+    end)
+end)
+test("cancellation waits for the outstanding request and sends no more", function()
+    asyncDeletes(function(requests, tick, confirm)
+        TM:Clean(TM:Group(TM:Read(71)))
+        TM.operation.cancelled = true
+        confirm(2); tick(0.2)
+        assert(not TM.operation and #requests == 1 and builds[5])
+        assert(messages[1]:find("detenido") and messages[1]:find("Borradas: 1"))
+    end)
+end)
+test("temporary busy responses retry the same row without skipping ahead", function()
+    local oldDelete, attempts = C_ClassTalents.DeleteConfig, 0
+    C_ClassTalents.DeleteConfig = function(id)
+        attempts = attempts + 1
+        if attempts <= 2 then assert(id == 2); return false end
+        return oldDelete(id)
+    end
+    TM:Clean(TM:Group(TM:Read(71)))
+    assert(not TM.operation and #deleted == 2 and attempts == 4)
+    C_ClassTalents.DeleteConfig = oldDelete
 end)
 test("retail guard prevents mutation on Classic", function()
     local groups = TM:Group(TM:Read(71))
