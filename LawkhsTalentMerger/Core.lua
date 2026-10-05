@@ -1,19 +1,33 @@
 local _, TM = ...
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
+function TM:Supported()
+    return WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and C_ClassTalents and C_Traits and C_SpecializationInfo and
+        type(C_SpecializationInfo.GetSpecialization) == "function" and
+        type(C_SpecializationInfo.GetSpecializationInfo) == "function" and
+        type(C_SpecializationInfo.GetNumSpecializationsForClassID) == "function" and
+        type(C_ClassTalents.GetConfigIDsBySpecID) == "function" and
+        type(C_ClassTalents.DeleteConfig) == "function" and
+        type(C_ClassTalents.RenameConfig) == "function" and
+        type(C_Traits.GenerateImportString) == "function" and
+        type(C_Traits.ConfigHasStagedChanges) == "function"
+end
+
 function TM:Message(text)
     print("|cff66ccffLawkh's Talent Merger:|r " .. text)
 end
 
 function TM:SpecID()
-    local index = GetSpecialization()
-    return index and GetSpecializationInfo(index)
+    local index = C_SpecializationInfo.GetSpecialization()
+    local id = index and C_SpecializationInfo.GetSpecializationInfo(index)
+    return id and id > 0 and id or nil
 end
 
 -- Export strings contain class, spec, hero choices and ranks, but no loadout name.
 -- Failed/empty exports must never be grouped as duplicates.
 function TM:Read(specID)
     local rows = {}
+    if not specID or not self:Supported() or InCombatLockdown() then return rows end
     for _, id in ipairs(C_ClassTalents.GetConfigIDsBySpecID(specID) or {}) do
         local info = C_Traits.GetConfigInfo(id)
         if info and id ~= C_ClassTalents.GetActiveConfigID() then
@@ -62,6 +76,7 @@ function TM:SuggestedName(group)
 end
 
 function TM:Writable()
+    if not self:Supported() then return false, "Este addon necesita WoW Retail y sus API de talentos." end
     if InCombatLockdown() then return false, "Espera a salir de combate." end
     local active = C_ClassTalents.GetActiveConfigID()
     if active and C_Traits.ConfigHasStagedChanges(active) then
@@ -144,8 +159,11 @@ end
 
 function TM:AllRows()
     local rows = {}
-    for i = 1, GetNumSpecializations() do
-        for _, row in ipairs(self:Read(GetSpecializationInfo(i))) do rows[#rows + 1] = row end
+    if not self:Supported() or InCombatLockdown() then return rows end
+    local _, _, classID = UnitClass("player")
+    if not classID then return rows end
+    for i = 1, C_SpecializationInfo.GetNumSpecializationsForClassID(classID) do
+        for _, row in ipairs(self:Read(C_SpecializationInfo.GetSpecializationInfo(i))) do rows[#rows + 1] = row end
     end
     return rows
 end

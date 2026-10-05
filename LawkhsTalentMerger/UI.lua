@@ -1,4 +1,5 @@
 local _, TM = ...
+if not TM:Supported() then return end
 
 local function Button(parent, label, width, onClick)
     local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -112,11 +113,15 @@ function TM:Dialog(title, report, initial, required, callback)
     f.scroll:SetVerticalScroll(0)
     f.input:SetShown(initial ~= nil)
     f.input:SetText(initial or "")
+    f.accept:SetEnabled(not InCombatLockdown() and
+        (not required or f.input:GetText() == required) and
+        (not f.needsName or f.input:GetText():match("%S") ~= nil))
     f:Show()
     if initial ~= nil then f.input:SetFocus(); f.input:HighlightText() end
 end
 
 function TM:ShowMerge(group)
+    if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
     if not group then
         self.window:Show()
         self:Refresh()
@@ -133,6 +138,7 @@ function TM:ShowMerge(group)
 end
 
 function TM:ShowClean()
+    if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
     self:Refresh()
     if #self.groups == 0 then self:Message("No hay builds repetidas."); return end
     local groups, lines = self.groups, { "Se conservará la primera build de cada grupo, según el orden de WoW. Las copias restantes se borrarán. Las builds únicas se conservarán.\n" }
@@ -146,11 +152,12 @@ function TM:ShowClean()
 end
 
 function TM:ShowNuke()
+    if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
     local rows = self:AllRows()
     if #rows == 0 then self:Message("No hay builds guardadas."); return end
     local lines = { "Se borrarán TODAS las builds guardadas de este personaje, en TODAS sus especializaciones. Los talentos activos del personaje no se restablecen.\n" }
     for _, row in ipairs(rows) do
-        local _, specName = GetSpecializationInfoByID(row.spec)
+        local _, specName = GetSpecializationInfoForSpecID(row.spec)
         lines[#lines + 1] = "BORRAR: [" .. (specName or tostring(row.spec)) .. "] " .. row.name
     end
     lines[#lines + 1] = "\nEscribe exactamente NUKE para confirmar."
@@ -159,7 +166,8 @@ function TM:ShowNuke()
 end
 
 function TM:ColorNative(talents)
-    if InCombatLockdown() or not talents.LoadSystem or not talents.configIDs then return end
+    if InCombatLockdown() or not talents.LoadSystem or not talents.configIDs or
+        not talents.configIDToName or talents:IsInspecting() then return end
     local _, colors = self:Group(self:Read(talents:GetSpecID()))
     -- Use the public display translator; do not alter Blizzard's name lookup.
     talents.LoadSystem:SetSelectionOptions(talents.configIDs, function(id)
@@ -172,7 +180,8 @@ end
 
 function TM:Attach()
     local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
-    if not talents or self.attached or InCombatLockdown() then return end
+    if not talents or self.attached or InCombatLockdown() or
+        type(talents.RefreshLoadoutOptions) ~= "function" or not talents.LoadSystem then return end
     self.attached = talents
     local open = Button(talents, "Lawkh's Talent Merger", 190, function()
         self.window:Show(); self:Refresh()
@@ -185,7 +194,13 @@ end
 
 function TM:Refresh()
     self:CreateWindow()
-    if InCombatLockdown() then self.status:SetText("Espera a salir de combate para revisar las builds."); return end
+    if InCombatLockdown() then
+        self.status:SetText("Espera a salir de combate para revisar las builds.")
+        self.mergeButton:SetEnabled(false)
+        self.cleanButton:SetEnabled(false)
+        self.nukeButton:SetEnabled(false)
+        return
+    end
     local specID = self:SpecID()
     self.rows = specID and self:Read(specID) or {}
     self.groups, self.colors = self:Group(self.rows)
@@ -227,6 +242,7 @@ function TM:Refresh()
         (unreadable > 0 and (" · " .. unreadable .. " sin leer") or ""))
     self.mergeButton:SetEnabled(#self.groups > 0)
     self.cleanButton:SetEnabled(#self.groups > 0)
+    self.nukeButton:SetEnabled(true)
     self:Attach()
     if self.attached then self:ColorNative(self.attached) end
 end

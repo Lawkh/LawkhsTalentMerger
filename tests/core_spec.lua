@@ -1,4 +1,5 @@
 local TM = {}
+WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 assert(loadfile("LawkhsTalentMerger/Core.lua"))("LawkhsTalentMerger", TM)
 assert(loadfile("LawkhsTalentMerger/UI.lua")) -- Syntax validation without game UI.
 
@@ -21,9 +22,12 @@ local function reset()
     LawkhsTalentMergerDB = nil
 end
 function InCombatLockdown() return combat end
-function GetSpecialization() return 1 end
-function GetSpecializationInfo(i) return i == 1 and 71 or 72 end
-function GetNumSpecializations() return 2 end
+function UnitClass() return "Warrior", "WARRIOR", 1 end
+C_SpecializationInfo = {
+    GetSpecialization = function() return 1 end,
+    GetSpecializationInfo = function(i) return i == 1 and 71 or 72 end,
+    GetNumSpecializationsForClassID = function() return 2 end,
+}
 function time() return 123 end
 TM.Message = function(_, text) messages[#messages + 1] = text end
 TM.Refresh = function() end
@@ -107,5 +111,19 @@ test("partial deletion failures are reported", function()
     TM:Clean(TM:Group(TM:Read(71)))
     assert(#deleted == 1 and deleted[1] == 5 and builds[2])
     assert(messages[1]:find("Mythic"))
+end)
+test("retail guard prevents mutation on Classic", function()
+    local groups = TM:Group(TM:Read(71))
+    WOW_PROJECT_ID = 2
+    assert(#TM:Read(71) == 0)
+    TM:Clean(groups)
+    assert(#deleted == 0)
+    WOW_PROJECT_ID = 1
+end)
+test("missing retail API is rejected", function()
+    local api = C_Traits.GenerateImportString
+    C_Traits.GenerateImportString = nil
+    assert(not TM:Supported() and #TM:Read(71) == 0)
+    C_Traits.GenerateImportString = api
 end)
 print(passed .. " tests passed")

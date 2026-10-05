@@ -8,6 +8,14 @@ Copia la carpeta `LawkhsTalentMerger` a `World of Warcraft/_retail_/Interface/Ad
 
 Abre los talentos y pulsa **Lawkh's Talent Merger**, o usa `/tm`.
 
+Carpeta de instalación de este equipo: `D:\Juegos\World of Warcraft\_retail_\Interface\AddOns\LawkhsTalentMerger`.
+
+## Quitar el addon
+
+Desactívalo en la lista de addons o cierra WoW y borra únicamente la carpeta `LawkhsTalentMerger` de `Interface\AddOns`. No requiere bibliotecas externas ni modifica archivos de Blizzard u otros addons. Los hooks y colores desaparecen al reiniciar o recargar sin el addon.
+
+Las copias de seguridad pueden quedarse en `WTF\Account\<cuenta>\<reino>\<personaje>\SavedVariables\LawkhsTalentMerger.lua` y su `.bak`; esos dos archivos son opcionales para eliminar sus datos. Quitarlo no revierte builds que hayas renombrado o borrado con Merge, Clean o Nuke.
+
 ## Acciones
 
 - **Merge**, primer botón: muestra los grupos repetidos. Si hay varios, elige Merge en el grupo. Pide un nombre y propone `X/Y/Z` con los nombres originales. La build resultante conserva los talentos idénticos: se renombra la primera instancia y se eliminan sus copias. Esto funciona aunque se haya alcanzado el límite de builds y conserva los ajustes de barras/equipo de la primera.
@@ -26,9 +34,9 @@ Las operaciones comprueban de nuevo la lista confirmada, se bloquean en combate 
 
 ## Desarrollo y validación
 
-`npm ci` y `npm test` ejecutan pruebas Lua del agrupado, conservación de primeras instancias, Merge, confirmación NUKE, cambios tras la previsualización, combate y errores de API. Las dependencias Node solo se usan para pruebas y no se distribuyen con el addon.
+`npm ci` y `npm test` ejecutan 11 pruebas Lua de operaciones y 9 pruebas de interfaz simulada: agrupado, conservación de primeras instancias, Merge, confirmación NUKE, cambios tras la previsualización, combate, errores de API, guardas de retail, carga tardía de talentos y reutilización de diálogos. Las pruebas de interfaz no validan la apariencia ni el taint. Las dependencias Node solo se usan para pruebas y no se distribuyen con el addon.
 
-La integración se basa en el [código de talentos de Blizzard](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_PlayerSpells/ClassTalents/Blizzard_ClassTalentsFrame.lua) y sus contratos [C_ClassTalents](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_APIDocumentationGenerated/ClassTalentsDocumentation.lua) y [C_Traits](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_APIDocumentationGenerated/SharedTraitsDocumentation.lua). La referencia consultada es la rama `live`, no una instantánea fijada de 12.1.0. La compatibilidad exacta, disposición visual y ausencia de taint deben comprobarse en un cliente 12.1.0.
+La revisión del 5 de octubre de 2026 comprobó `.build.info` de este equipo: **12.1.0.69933**. La referencia de Blizzard consultada fue la etiqueta **12.1.0 (69933)**, que coincide con la build instalada: [interfaz de talentos](https://github.com/Gethe/wow-ui-source/blob/12.1.0/Interface/AddOns/Blizzard_PlayerSpells/ClassTalents/Blizzard_ClassTalentsFrame.lua), [C_ClassTalents](https://github.com/Gethe/wow-ui-source/blob/12.1.0/Interface/AddOns/Blizzard_APIDocumentationGenerated/ClassTalentsDocumentation.lua), [C_Traits](https://github.com/Gethe/wow-ui-source/blob/12.1.0/Interface/AddOns/Blizzard_APIDocumentationGenerated/SharedTraitsDocumentation.lua), [C_SpecializationInfo](https://github.com/Gethe/wow-ui-source/blob/12.1.0/Interface/AddOns/Blizzard_APIDocumentationGenerated/SpecializationInfoDocumentation.lua) y [menú nativo](https://github.com/Gethe/wow-ui-source/blob/12.1.0/Interface/AddOns/Blizzard_SharedXML/Shared/LoadSystem/LoadSystemTemplates.lua). Se usan las API de especialización actuales, sin depender de sus antiguos alias globales. La disposición visual y ausencia de taint todavía deben comprobarse dentro del cliente.
 
 ### Prueba en el juego pendiente
 
