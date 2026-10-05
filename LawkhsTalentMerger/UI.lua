@@ -1,5 +1,5 @@
 local _, TM = ...
-if not TM:Supported() then return end
+if WOW_PROJECT_ID ~= WOW_PROJECT_MAINLINE then return end
 
 local function Button(parent, label, width, onClick)
     local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -139,6 +139,7 @@ end
 
 function TM:ShowClean()
     if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
+    self:CreateWindow()
     self:Refresh()
     if #self.groups == 0 then self:Message("No hay builds repetidas."); return end
     local groups, lines = self.groups, { "Se conservará la primera build de cada grupo, según el orden de WoW. Las copias restantes se borrarán. Las builds únicas se conservarán.\n" }
@@ -153,6 +154,7 @@ end
 
 function TM:ShowNuke()
     if InCombatLockdown() then self:Message("Espera a salir de combate."); return end
+    self:CreateWindow()
     local rows = self:AllRows()
     if #rows == 0 then self:Message("No hay builds guardadas."); return end
     local lines = { "Se borrarán TODAS las builds guardadas de este personaje, en TODAS sus especializaciones. Los talentos activos del personaje no se restablecen.\n" }
@@ -165,35 +167,67 @@ function TM:ShowNuke()
         function(token) self:Nuke(rows, token) end)
 end
 
-function TM:ColorNative(talents)
-    if InCombatLockdown() or not talents.LoadSystem or not talents.configIDs or
-        not talents.configIDToName or talents:IsInspecting() then return end
-    local _, colors = self:Group(self:Read(talents:GetSpecID()))
-    -- Use the public display translator; do not alter Blizzard's name lookup.
-    talents.LoadSystem:SetSelectionOptions(talents.configIDs, function(id)
-        local name = talents.configIDToName[id] or ""
-        return colors[id] and ("|cff" .. colors[id] .. name .. "|r") or name
-    end, NORMAL_FONT_COLOR, function(id)
-        if talents:IsStarterBuildConfig(id) then return TALENT_FRAME_DROP_DOWN_STARTER_BUILD_TOOLTIP end
+function TM:ModifyTalentMenu(dropdown, root)
+    if not self:Supported() then return end
+    local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
+    if talents and talents:IsInspecting() then return end
+    local rows = self:Read(self:SpecID())
+    local groups, colors = self:Group(rows)
+    -- Modify only menu descriptions. Preserve the native load callbacks and names.
+    for _, description in root:EnumerateElementDescriptions() do
+        local color = colors[description:GetData()]
+        if color then
+            local red = tonumber(color:sub(1, 2), 16) / 255
+            local green = tonumber(color:sub(3, 4), 16) / 255
+            local blue = tonumber(color:sub(5, 6), 16) / 255
+            description:AddInitializer(function(button)
+                if button.fontString then button.fontString:SetTextColor(red, green, blue) end
+            end)
+        end
+    end
+    local merge = MenuUtil.CreateButton("Merge", function()
+        self:CreateWindow(); self:ShowMerge()
     end)
+    local nuke = MenuUtil.CreateButton("Nuke", function() self:ShowNuke() end)
+    local clean = MenuUtil.CreateButton("Clean", function() self:ShowClean() end)
+    local ready = not InCombatLockdown()
+    merge:SetEnabled(ready and #groups > 0)
+    clean:SetEnabled(ready and #groups > 0)
+    nuke:SetEnabled(ready)
+    root:Insert(merge, 1)
+    root:Insert(nuke, 2)
+    root:Insert(clean, 3)
+end
+
+function TM:RegisterMenu()
+    if self.menuRegistered or not Menu or not Menu.ModifyMenu or not MenuUtil then return end
+    Menu.ModifyMenu("MENU_CLASS_TALENT_PROFILE", function(dropdown, root)
+        self:ModifyTalentMenu(dropdown, root)
+    end)
+    self.menuRegistered = true
 end
 
 function TM:Attach()
     local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
-    if not talents or self.attached or InCombatLockdown() or
-        type(talents.RefreshLoadoutOptions) ~= "function" or not talents.LoadSystem then return end
+    if not talents or self.attached or InCombatLockdown() then return end
     self.attached = talents
     local open = Button(talents, "Lawkh's Talent Merger", 190, function()
         self.window:Show(); self:Refresh()
     end)
-    open:SetPoint("TOPRIGHT", -45, -38)
-    hooksecurefunc(talents, "RefreshLoadoutOptions", function(frame) self:ColorNative(frame) end)
-    talents:HookScript("OnShow", function(frame) self:ColorNative(frame) end)
-    self:ColorNative(talents)
+    local dropdown = talents.LoadSystem and talents.LoadSystem.Dropdown
+    if dropdown then open:SetPoint("BOTTOMLEFT", dropdown, "TOPLEFT", 0, 50)
+    else open:SetPoint("TOPRIGHT", -45, -38) end
+    self.openButton = open
 end
 
 function TM:Refresh()
     self:CreateWindow()
+    self:RegisterMenu()
+    if not self:Supported() then
+        self.status:SetText("API de talentos no disponible. Usa /tm status para diagnosticar.")
+        self.mergeButton:SetEnabled(false); self.cleanButton:SetEnabled(false); self.nukeButton:SetEnabled(false)
+        return
+    end
     if InCombatLockdown() then
         self.status:SetText("Espera a salir de combate para revisar las builds.")
         self.mergeButton:SetEnabled(false)
@@ -244,8 +278,9 @@ function TM:Refresh()
     self.cleanButton:SetEnabled(#self.groups > 0)
     self.nukeButton:SetEnabled(true)
     self:Attach()
-    if self.attached then self:ColorNative(self.attached) end
 end
+
+TM:RegisterMenu()
 
 local events = CreateFrame("Frame")
 for _, event in ipairs({ "PLAYER_LOGIN", "ADDON_LOADED", "TRAIT_CONFIG_UPDATED", "TRAIT_CONFIG_CREATED",
@@ -267,7 +302,12 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
     TM:CreateWindow()
     TM:Refresh()
     command = command:lower():match("^%s*(.-)%s*$")
-    if command == "nuke" then TM:ShowNuke()
+    if command == "status" then
+        TM:Message("v0.1.2 · API retail: " .. (TM:Supported() and "OK" or "no disponible") ..
+            " · menú: " .. (TM.menuRegistered and "registrado" or "no disponible") ..
+            " · builds: " .. #(TM.rows or {}) .. " · grupos: " .. #(TM.groups or {}))
+    elseif not TM:Supported() then TM:Message("API de talentos de Retail no disponible. Comprueba la versión del cliente.")
+    elseif command == "nuke" then TM:ShowNuke()
     elseif command == "clean" then TM:ShowClean()
     elseif command == "merge" then TM:ShowMerge()
     else TM.window:SetShown(not TM.window:IsShown()) end

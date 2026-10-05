@@ -26,6 +26,22 @@ C_SpecializationInfo = {
     GetNumSpecializationsForClassID = function() return 1 end,
 }
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+local menuCallbacks = {}
+Menu = { ModifyMenu = function(tag, callback) menuCallbacks[tag] = callback end }
+local function description(text, callback, data)
+    local item = { text = text, callback = callback, data = data, initializers = {} }
+    function item:GetData() return self.data end
+    function item:SetEnabled(value) self.enabled = value end
+    function item:AddInitializer(fn) self.initializers[#self.initializers + 1] = fn end
+    return item
+end
+MenuUtil = { CreateButton = function(text, callback) return description(text, callback) end }
+local function rootMenu()
+    local root = { items = { description("Raid", function() end, 1), description("Mythic", function() end, 2), description("Share") } }
+    function root:EnumerateElementDescriptions() return ipairs(self.items) end
+    function root:Insert(item, index) table.insert(self.items, index, item) end
+    return root
+end
 
 local methods = {}
 for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFrameStrata", "SetClampedToScreen",
@@ -88,19 +104,36 @@ test("login refresh works before Blizzard talent addon loads", function()
     events.scripts.OnEvent(events, "PLAYER_LOGIN"); flush()
     assert(#TM.groups == 1 and not TM.attached)
 end)
-test("late loaded talents attach and native names use group colors", function()
+test("late loaded talents attach without rewriting native selector", function()
     PlayerSpellsFrame = { TalentsFrame = talents }
     events.scripts.OnEvent(events, "ADDON_LOADED", "Blizzard_PlayerSpells"); flush()
     assert(TM.attached == talents)
-    assert(talents.LoadSystem.translator(1) == "|cff66ccffRaid|r")
-    assert(talents.LoadSystem.translator(2) == "|cff66ccffMythic|r")
+    assert(not talents.LoadSystem.translator)
     assert(talents.configIDToName[1] == "Raid")
 end)
-test("inspect mode does not overwrite native translator", function()
-    local translator = talents.LoadSystem.translator
-    talents.inspecting = true; TM:ColorNative(talents)
-    assert(talents.LoadSystem.translator == translator)
+test("native menu shows Merge first and Nuke above Clean, colors duplicates", function()
+    local root = rootMenu()
+    local originalCallback = root.items[1].callback
+    menuCallbacks.MENU_CLASS_TALENT_PROFILE(nil, root)
+    assert(root.items[1].text == "Merge" and root.items[2].text == "Nuke" and root.items[3].text == "Clean")
+    assert(root.items[4].callback == originalCallback and root.items[4].text == "Raid")
+    for i = 4, 5 do
+        local font = { SetTextColor = function(self, r, g, b) self.r, self.g, self.b = r, g, b end }
+        for _, initializer in ipairs(root.items[i].initializers) do initializer({ fontString = font }) end
+        assert(font.r == 0.4 and font.g == 0.8 and font.b == 1)
+    end
+end)
+test("inspect menu is unchanged", function()
+    local root = rootMenu()
+    talents.inspecting = true; TM:ModifyTalentMenu(nil, root)
+    assert(#root.items == 3 and #root.items[1].initializers == 0)
     talents.inspecting = false
+end)
+test("native menu actions disable in combat", function()
+    local root = rootMenu()
+    combat = true; TM:ModifyTalentMenu(nil, root)
+    for i = 1, 3 do assert(not root.items[i].enabled) end
+    combat = false
 end)
 test("Merge opens a name preview without mutating builds", function()
     TM:ShowMerge()
