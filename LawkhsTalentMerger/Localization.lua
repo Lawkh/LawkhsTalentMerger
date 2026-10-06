@@ -923,6 +923,16 @@ locales.zhTW.SELECT_SPECS = "請先選擇至少一個專精。"
 locales.zhTW.MERGE_BATCH_INTRO = "檢查所選專精的每個重複群組並編輯合併後的名稱。第一份配置將重新命名，其餘副本將刪除。"
 locales.zhTW.SCOPE = "合併、清理和Nuke作用於所選專精。"
 locales.zhTW.NUKE_REQUIRED = "輸入NUKE或123123以確認。"
+locales.enUS.ACTION_PREVIEW_HINT = "Click an action to preview the changes. Nothing is changed until you confirm."
+locales.esES.ACTION_PREVIEW_HINT = "Pulsa una acción para revisar los cambios. No se modifica nada hasta que confirmes."
+locales.deDE.ACTION_PREVIEW_HINT = "Klicke auf eine Aktion, um die Änderungen vorab zu prüfen. Erst nach deiner Bestätigung wird etwas geändert."
+locales.frFR.ACTION_PREVIEW_HINT = "Cliquez sur une action pour prévisualiser les changements. Rien ne sera modifié avant votre confirmation."
+locales.itIT.ACTION_PREVIEW_HINT = "Clicca su un’azione per vedere le modifiche in anteprima. Nulla verrà modificato finché non confermi."
+locales.ptBR.ACTION_PREVIEW_HINT = "Clique em uma ação para visualizar as alterações. Nada será alterado até você confirmar."
+locales.ruRU.ACTION_PREVIEW_HINT = "Нажмите действие, чтобы просмотреть изменения. Ничего не изменится, пока вы не подтвердите."
+locales.koKR.ACTION_PREVIEW_HINT = "작업을 클릭하여 변경 내용을 미리 확인하세요. 확인하기 전에는 아무것도 변경되지 않습니다."
+locales.zhCN.ACTION_PREVIEW_HINT = "点击操作可预览更改。确认之前不会进行任何修改。"
+locales.zhTW.ACTION_PREVIEW_HINT = "點擊操作可預覽變更。確認之前不會進行任何修改。"
 locales.enGB = locales.enUS
 locales.esMX = locales.esES
 -- Compatibility alias for clients reporting the older Portuguese locale.
