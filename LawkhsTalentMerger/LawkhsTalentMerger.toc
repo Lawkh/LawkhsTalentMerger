@@ -17,7 +17,7 @@
 ## Author: Lawkh
 ## X-Curse-Project-ID: 1729137
 ## X-Website: https://github.com/Lawkh/LawkhsTalentMerger
-## Version: 0.7.2
+## Version: 0.7.3
 ## OptionalDeps: TalentTreeTweaks, RaiderIO
 ## SavedVariablesPerCharacter: LawkhsTalentMergerDB
 Localization.lua

@@ -50,7 +50,7 @@ for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFram
     "SetMovable", "EnableMouse", "RegisterForDrag", "SetBackdropColor", "SetJustifyH", "SetScrollChild",
     "SetAutoFocus", "SetMaxLetters", "SetFocus", "HighlightText", "SetVerticalScroll", "StartMoving", "StopMovingOrSizing",
     "RegisterForClicks", "SetToplevel", "SetFrameLevel", "SetTextColor", "SetAllPoints", "SetColorTexture", "ClearFocus",
-    "ClearAllPoints", "SetTexture", "SetBackdropBorderColor" }) do
+    "ClearAllPoints", "SetTexture", "SetBackdropBorderColor", "SetScale", "Raise", "SetFontString", "SetButtonState" }) do
     methods[name] = function() end
 end
 function methods:SetSize(w,h) self.width,self.height=w,h end
@@ -61,11 +61,17 @@ function methods:GetHeight() return self.height or 0 end
 function methods:SetFrameLevel(level) self.level=level end
 function methods:GetFrameLevel() return self.level or 1 end
 function methods:GetFrameStrata() return "HIGH" end
+function methods:GetEffectiveScale() return 1 end
+function UIParent:GetEffectiveScale() return 1 end
 function methods:RegisterForClicks(value) self.clicks=value end
 function methods:GetTextWidth() return 80 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
 function methods:GetScript(name) return self.scripts[name] end
-function methods:HookScript(name, fn) self.hooks[name] = fn end
+function methods:HookScript(name, fn)
+    local previous=self.hooks[name]
+    if previous then self.hooks[name]=function(...) previous(...);fn(...) end
+    else self.hooks[name]=fn end
+end
 function methods:RegisterEvent(name) self.events[name] = true end
 function methods:SetBackdrop(value) self.backdrop = value end
 function methods:GetBackdrop() return self.backdrop end
@@ -249,7 +255,7 @@ test("all confirmations reuse a child view of the single window", function()
     TM:ShowNuke(); assert(TM.window == window and TM.dialog == dialog and TM.view == "confirm")
     local rootWindows = 0
     for _, frame in ipairs(frames) do
-        if frame.kind == "Frame" and frame.parent == UIParent then rootWindows = rootWindows + 1 end
+        if frame.kind == "Frame" and frame.parent == UIParent and frame.name == "LawkhsTalentMergerWindow" then rootWindows = rootWindows + 1 end
     end
     assert(rootWindows == 1 and #UISpecialFrames == 1)
 end)
@@ -586,5 +592,29 @@ test("cached dropdown colors preserve actions and do not read talents", function
         assert(font.r==0.4 and font.g==0.8 and font.b==1)
     end
     assert(TM.readCount==reads)
+end)
+test("standalone launcher receives press and click without opening twice", function()
+    assert(TM.openButton.parent.parent==UIParent)
+    TM.window:Hide();TM.launcherPress=nil
+    local reads=TM.readCount
+    TM.openButton.scripts.OnMouseDown(TM.openButton,"LeftButton")
+    TM.openButton.scripts.OnClick(TM.openButton,"LeftButton")
+    assert(TM.window:IsShown() and TM.readCount==reads+1 and not TM.launcherLastError)
+    talents.hooks.OnHide();assert(not TM.openButton.parent:IsShown())
+    talents.hooks.OnShow();assert(TM.openButton.parent:IsShown())
+end)
+
+test("launcher surfaces panel errors and diagnostics do not scan", function()
+    local show,message=TM.ShowList,TM.Message
+    local text
+    TM.Message=function(_,value) text=value end
+    TM.ShowList=function() error("Open failed") end
+    assert(not TM:OpenFromLauncher() and TM.launcherLastError:find("Open failed",1,true))
+    assert(text:find("Open failed",1,true))
+    local reads=TM.readCount
+    SlashCmdList.LAWKHSTALENTMERGER("launcher")
+    assert(TM.readCount==reads and text:find("Open failed",1,true))
+    TM.ShowList,TM.Message=show,message
+    assert(TM:OpenFromLauncher() and not TM.launcherLastError)
 end)
 print(passed .. " UI tests passed")

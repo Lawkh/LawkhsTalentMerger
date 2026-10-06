@@ -448,17 +448,70 @@ function TM:CheckCreatedLoadout(id, attempt)
     else self:CheckDuplicates() end
 end
 
+function TM:OpenFromLauncher()
+    local ok, reason = pcall(self.ShowList, self)
+    if not ok then
+        self.launcherLastError = tostring(reason)
+        self:Message(T("LAUNCHER_ERROR", self.launcherLastError))
+        return false
+    end
+    self.launcherLastError = nil
+    self.window:SetFrameStrata("DIALOG")
+    self.window:SetFrameLevel(200)
+    self.window:SetToplevel(true)
+    self.window:Raise()
+    return true
+end
+
+function TM:LauncherReport()
+    self:Message(T("LAUNCHER_REPORT", self.launcherMouseEvents or 0, self.launcherClickEvents or 0,
+        self.window and self.window:IsShown() and T("OK") or T("UNAVAILABLE"), self.launcherLastError or "-"))
+end
+
 function TM:Attach()
     local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
     if not talents or self.attached or InCombatLockdown() then return end
     self.attached = talents
-    local launcher = CreateFrame("Frame", "LawkhsTalentMergerLauncherContainer", talents)
-    launcher:SetPoint("TOPRIGHT", -45, -38)
+    local launcher = CreateFrame("Frame", "LawkhsTalentMergerLauncherContainer", UIParent)
+    launcher:SetPoint("TOPRIGHT", talents, "TOPRIGHT", -45, -38)
     launcher:SetSize(240, 62)
-    launcher:SetFrameStrata(talents:GetFrameStrata())
-    launcher:SetFrameLevel(talents:GetFrameLevel() + 50)
-    local open = Button(launcher, "Lawkh's Talent Merger", 190, function()
-        self:ShowList()
+    launcher:SetFrameStrata("DIALOG")
+    launcher:SetFrameLevel(100)
+    launcher:SetToplevel(true)
+    launcher:SetScale(talents:GetEffectiveScale() / UIParent:GetEffectiveScale())
+    local open = CreateFrame("Button", "LawkhsTalentMergerOpenButton", launcher, "BackdropTemplate")
+    open:SetSize(190, 25)
+    open:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 8 })
+    local label = open:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("CENTER")
+    open:SetFontString(label)
+    local function resetButton()
+        open:SetBackdropColor(0.35, 0.055, 0.035, 1)
+        open:SetBackdropBorderColor(0.70, 0.52, 0.24, 1)
+        open:SetButtonState("NORMAL")
+    end
+    open:SetScript("OnEnter", function()
+        open:SetBackdropColor(0.55, 0.12, 0.055, 1)
+        open:SetBackdropBorderColor(1, 0.82, 0.25, 1)
+    end)
+    open:SetScript("OnLeave", resetButton)
+    open:SetScript("OnShow", resetButton)
+    resetButton()
+    open:SetText("Lawkh's Talent Merger")
+    open:SetWidth(math.max(190, open:GetTextWidth() + 24))
+    open:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" then return end
+        open:SetBackdropColor(0.22, 0.035, 0.025, 1)
+        self.launcherMouseEvents = (self.launcherMouseEvents or 0) + 1
+        self.launcherPress = true
+        self:OpenFromLauncher()
+        resetButton()
+    end)
+    open:SetScript("OnClick", function(_, button)
+        if button and button ~= "LeftButton" then return end
+        self.launcherClickEvents = (self.launcherClickEvents or 0) + 1
+        if not self.launcherPress then self:OpenFromLauncher() end
+        self.launcherPress = nil
     end)
     -- Keep the launcher away from the loadout menu, which opens above its anchor.
     open:SetPoint("TOPRIGHT")
@@ -482,8 +535,9 @@ function TM:Attach()
             if talents:IsVisible() then self:EnsureDuplicateCheck() end
         end)
     end
-    talents:HookScript("OnShow", checkOnShow)
-    if talents:IsVisible() then checkOnShow() end
+    talents:HookScript("OnShow", function() launcher:Show(); checkOnShow() end)
+    talents:HookScript("OnHide", function() launcher:Hide(); self.launcherPress = nil end)
+    if talents:IsVisible() then launcher:Show(); checkOnShow() else launcher:Hide() end
 end
 
 function TM:UpdateCombatState()
@@ -624,6 +678,7 @@ SLASH_LAWKHSTALENTMERGER2 = "/lawkhtm"
 SlashCmdList.LAWKHSTALENTMERGER = function(command)
     command = command:lower():match("^%s*(.-)%s*$")
     if command == "memory" then TM:MemoryReport(); return end
+    if command == "launcher" then TM:LauncherReport(); return end
     TM:CreateWindow()
     TM:UpdateCombatState()
     if command == "status" then TM:Refresh() end

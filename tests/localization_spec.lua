@@ -27,7 +27,7 @@ for _, locale in ipairs(codes) do
         assert(type(formatted) == "string", locale .. ": failed formatting " .. key)
         count = count + 1
     end
-    assert(count == 93)
+    assert(count == 95)
     assert(context:T("NUKE_REQUIRED"):find("NUKE", 1, true))
     assert(context:T("NUKE_PROMPT"):find("NUKE", 1, true))
     checked = checked + count
