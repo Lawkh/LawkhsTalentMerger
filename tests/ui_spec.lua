@@ -58,7 +58,10 @@ function methods:SetWidth(w) self.width=w end
 function methods:SetHeight(h) self.height=h end
 function methods:GetWidth() return self.width or 0 end
 function methods:GetHeight() return self.height or 0 end
-function methods:GetFrameLevel() return 1 end
+function methods:SetFrameLevel(level) self.level=level end
+function methods:GetFrameLevel() return self.level or 1 end
+function methods:GetFrameStrata() return "HIGH" end
+function methods:RegisterForClicks(value) self.clicks=value end
 function methods:GetTextWidth() return 80 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
 function methods:GetScript(name) return self.scripts[name] end
@@ -84,6 +87,7 @@ function methods:Hide()
     if wasShown and self.scripts.OnHide then self.scripts.OnHide(self) end
 end
 function methods:IsShown() return self.shown end
+function methods:IsVisible() return self.shown end
 function CreateFrame(kind, name, parent)
     local frame = setmetatable({ kind = kind, name = name, parent = parent, scripts = {}, hooks = {}, events = {}, shown = true, enabled = true }, { __index = methods })
     frames[#frames + 1] = frame
@@ -146,9 +150,9 @@ test("native loadout dropdown is untouched and registers no modifier", function(
     local root=rootMenu()
     local original=root.items[1].callback
     TM:ModifyTalentMenu(nil,root)
-    assert(not menuCallbacks.MENU_CLASS_TALENT_PROFILE and #root.items==3)
+    assert(menuCallbacks.MENU_CLASS_TALENT_PROFILE and #root.items==3)
     assert(root.items[1].callback==original and root.items[1].text=="Raid")
-    for _,item in ipairs(root.items) do assert(#item.initializers==0) end
+    assert(#root.items[1].initializers==1 and #root.items[2].initializers==1 and #root.items[3].initializers==0)
 end)
 
 test("inspect menu is unchanged", function()
@@ -536,7 +540,7 @@ test("launcher opens the panel once and updates the duplicate badge", function()
     assert(TM.duplicateBadge.label:GetText()==TM:T("DUPLICATED_FOUND"))
     TM:SetDuplicateStatus(0)
     assert(TM.duplicateBadge.label:GetText()==TM:T("NO_DUPLICATED") and TM.duplicateBadge.icon.texture=="Interface/RaidFrame/ReadyCheck-Ready")
-    TM:SetDuplicateStatus(nil);assert(TM.duplicateBadge.label:GetText()==TM:T("NOT_CHECKED"))
+    TM:SetDuplicateStatus(nil);assert(TM.duplicateBadge.label:GetText()==TM:T("CHECK_INCOMPLETE"))
 end)
 
 test("created saved loadout checks once without opening the panel", function()
@@ -556,5 +560,31 @@ test("changing selections and filters does not scan talents", function()
     TM.hideUnique:SetChecked(true);TM.hideUnique.scripts.OnClick(TM.hideUnique)
     TM:ShowMerge()
     assert(TM.readCount==reads and TM.dialog.mergeRows[1]:IsShown())
+end)
+test("launcher sits above the talent canvas and accepts mouse-up clicks", function()
+    assert(TM.openButton.parent.name=="LawkhsTalentMergerLauncherContainer")
+    assert(TM.openButton.parent:GetFrameLevel()>talents:GetFrameLevel())
+    assert(TM.openButton.clicks=="AnyUp")
+end)
+
+test("first unchecked talent opening scans once even with repeated show callbacks", function()
+    TM.window:Hide();timers={};TM.duplicateCheckAttempted=false
+    local reads=TM.readCount
+    TM:EnsureDuplicateCheck();assert(TM.readCount==reads+1)
+    for i=1,10 do TM:EnsureDuplicateCheck() end
+    assert(TM.readCount==reads+1)
+end)
+
+test("cached dropdown colors preserve actions and do not read talents", function()
+    TM:CheckDuplicates();local reads=TM.readCount
+    for i=1,10 do
+        local root=rootMenu();local callback=root.items[1].callback
+        TM:ModifyTalentMenu(nil,root)
+        assert(#root.items==3 and root.items[1].callback==callback)
+        local font={SetTextColor=function(self,r,g,b) self.r,self.g,self.b=r,g,b end}
+        root.items[1].initializers[1]({fontString=font})
+        assert(font.r==0.4 and font.g==0.8 and font.b==1)
+    end
+    assert(TM.readCount==reads)
 end)
 print(passed .. " UI tests passed")

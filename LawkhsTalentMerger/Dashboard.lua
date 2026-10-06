@@ -68,6 +68,8 @@ end
 function TM:RenderDashboard(snapshot)
     self:CreateDashboard()
     local specs = snapshot or self:Specializations()
+    if not snapshot then self.duplicateCheckAttempted = true end
+    self.colorCache = self.colorCache or {}
     self.dashboardSpecs = specs
     local width = math.max(760, #specs * 240 + 40)
     self.dashboardWidth = width
@@ -108,6 +110,7 @@ function TM:RenderDashboard(snapshot)
         card.icon:SetTexture(spec.icon or "Interface/Icons/INV_Misc_QuestionMark")
         card.name:SetWidth(cardWidth - 90); card.name:SetHeight(36); card.name:SetText(spec.name)
         local groups, colors = self:Group(spec.rows)
+        self.colorCache[spec.id] = colors
         if spec.id == self:SpecID() then self.rows, self.groups, self.colors = spec.rows, groups, colors end
         total = total + #spec.rows; groupTotal = groupTotal + #groups
         for _, row in ipairs(spec.rows) do if not row.key then unknown = true end end

@@ -973,6 +973,16 @@ locales.zhCN.DUPLICATED_FOUND = "发现重复配置"
 locales.zhTW.NOT_CHECKED = "尚未檢查"
 locales.zhTW.NO_DUPLICATED = "無重複配置"
 locales.zhTW.DUPLICATED_FOUND = "發現重複配置"
+locales.enUS.CHECK_INCOMPLETE = "Check incomplete"
+locales.esES.CHECK_INCOMPLETE = "Comprobación incompleta"
+locales.deDE.CHECK_INCOMPLETE = "Prüfung unvollständig"
+locales.frFR.CHECK_INCOMPLETE = "Vérification incomplète"
+locales.itIT.CHECK_INCOMPLETE = "Controllo incompleto"
+locales.ptBR.CHECK_INCOMPLETE = "Verificação incompleta"
+locales.ruRU.CHECK_INCOMPLETE = "Проверка не завершена"
+locales.koKR.CHECK_INCOMPLETE = "확인 미완료"
+locales.zhCN.CHECK_INCOMPLETE = "检查未完成"
+locales.zhTW.CHECK_INCOMPLETE = "檢查未完成"
 locales.enGB = locales.enUS
 locales.esMX = locales.esES
 -- Compatibility alias for clients reporting the older Portuguese locale.

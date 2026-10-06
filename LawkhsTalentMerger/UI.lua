@@ -371,15 +371,39 @@ function TM:UpdateNukeSelection()
     self:UpdateCombatState()
 end
 
--- The native loadout dropdown is intentionally untouched.
-function TM:ModifyTalentMenu() end
-function TM:RegisterMenu() end
+-- Color from the last snapshot; never scan talents while generating the menu.
+function TM:ModifyTalentMenu(_, root)
+    local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
+    if talents and talents:IsInspecting() then return end
+    local colors = self.colorCache and self.colorCache[self:SpecID()] or {}
+    for _, description in root:EnumerateElementDescriptions() do
+        local color = colors[description:GetData()]
+        if color then
+            description:AddInitializer(function(button)
+                if button.fontString then
+                    button.fontString:SetTextColor(tonumber(color:sub(1,2),16)/255,
+                        tonumber(color:sub(3,4),16)/255,tonumber(color:sub(5,6),16)/255)
+                end
+            end)
+        end
+    end
+end
+function TM:RegisterMenu()
+    if self.menuRegistered or not Menu or not Menu.ModifyMenu then return end
+    Menu.ModifyMenu("MENU_CLASS_TALENT_PROFILE", function(dropdown, root) self:ModifyTalentMenu(dropdown, root) end)
+    self.menuRegistered = true
+end
+
+function TM:EnsureDuplicateCheck()
+    if self.duplicateCheckAttempted or InCombatLockdown() or not self:Supported() then return end
+    self:CheckDuplicates()
+end
 
 function TM:SetDuplicateStatus(count)
     self.lastDuplicateCount = count
     if not self.duplicateBadge then return end
     if count == nil then
-        self.duplicateBadge.label:SetText(T("NOT_CHECKED"))
+        self.duplicateBadge.label:SetText(T(self.duplicateCheckAttempted and "CHECK_INCOMPLETE" or "NOT_CHECKED"))
         self.duplicateBadge.label:SetTextColor(0.65, 0.65, 0.65)
         self.duplicateBadge.icon:SetTexture("Interface/Icons/INV_Misc_QuestionMark")
     elseif count == 0 then
@@ -395,9 +419,13 @@ end
 
 function TM:CheckDuplicates()
     if not self:Supported() or InCombatLockdown() then self:SetDuplicateStatus(nil); return end
+    self.duplicateCheckAttempted = true
+    self.colorCache = self.colorCache or {}
     local count, unknown = 0, false
     for _, spec in ipairs(self:Specializations()) do
-        count = count + #self:Group(spec.rows)
+        local groups, colors = self:Group(spec.rows)
+        self.colorCache[spec.id] = colors
+        count = count + #groups
         for _, row in ipairs(spec.rows) do if not row.key then unknown = true end end
     end
     if count == 0 and unknown then self:SetDuplicateStatus(nil) else self:SetDuplicateStatus(count) end
@@ -424,13 +452,21 @@ function TM:Attach()
     local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
     if not talents or self.attached or InCombatLockdown() then return end
     self.attached = talents
-    local open = Button(talents, "Lawkh's Talent Merger", 190, function()
+    local launcher = CreateFrame("Frame", "LawkhsTalentMergerLauncherContainer", talents)
+    launcher:SetPoint("TOPRIGHT", -45, -38)
+    launcher:SetSize(240, 62)
+    launcher:SetFrameStrata(talents:GetFrameStrata())
+    launcher:SetFrameLevel(talents:GetFrameLevel() + 50)
+    local open = Button(launcher, "Lawkh's Talent Merger", 190, function()
         self:ShowList()
     end)
     -- Keep the launcher away from the loadout menu, which opens above its anchor.
-    open:SetPoint("TOPRIGHT", -45, -38)
+    open:SetPoint("TOPRIGHT")
+    open:EnableMouse(true)
+    open:RegisterForClicks("AnyUp")
+    open:SetEnabled(true)
     self.openButton = open
-    local badge = CreateFrame("Frame", nil, talents, "BackdropTemplate")
+    local badge = CreateFrame("Frame", nil, launcher, "BackdropTemplate")
     badge:SetPoint("TOPLEFT", open, "BOTTOMLEFT", 0, -4)
     badge:SetSize(math.max(190, open:GetTextWidth() + 24), 28)
     badge:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 8 })
@@ -441,6 +477,13 @@ function TM:Attach()
     badge.label:SetPoint("LEFT", 29, 0); badge.label:SetWidth(155); badge.label:SetJustifyH("LEFT")
     self.duplicateBadge = badge
     self:SetDuplicateStatus(self.lastDuplicateCount)
+    local function checkOnShow()
+        C_Timer.After(0.1, function()
+            if talents:IsVisible() then self:EnsureDuplicateCheck() end
+        end)
+    end
+    talents:HookScript("OnShow", checkOnShow)
+    if talents:IsVisible() then checkOnShow() end
 end
 
 function TM:UpdateCombatState()
@@ -506,6 +549,8 @@ function TM:Refresh()
     local specID = self:SpecID()
     self.rows = specID and self:Read(specID) or {}
     self.groups, self.colors = self:Group(self.rows)
+    self.colorCache = self.colorCache or {}
+    self.colorCache[specID] = self.colors
     for _, widget in ipairs(self.widgets) do widget:Hide() end
     local widgetIndex, y = 0, 0
     local function line(text, group)
