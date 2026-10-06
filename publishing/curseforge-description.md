@@ -17,7 +17,7 @@ Lawkh's Talent Merger compares selected talents and ranks, including Hero Talent
 
 ## How to use
 
-Open the talent loadout dropdown to access **Merge**, **Nuke** and **Clean**, or type `/tm` to open the addon window. Labels are translated to your client's language.
+Open the panel with the **Lawkh's Talent Merger** button on the right of your talent window, or type `/tm`. The native loadout dropdown is untouched. A badge beneath the button shows the last check: green for no duplicates, yellow when duplicates were found, or not checked. Analysis runs once when opening the panel or pressing Refresh, plus once after a saved loadout is created or imported.
 
 Commands: `/tm`, `/lawkhtm`, `/tm merge`, `/tm clean`, `/tm nuke`, `/tm status`.
 

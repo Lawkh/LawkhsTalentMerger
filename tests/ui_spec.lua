@@ -142,18 +142,15 @@ test("late loaded talents attach without rewriting native selector", function()
     assert(not talents.LoadSystem.translator)
     assert(talents.configIDToName[1] == "Raid")
 end)
-test("native menu shows Merge first and Nuke above Clean, colors duplicates", function()
-    local root = rootMenu()
-    local originalCallback = root.items[1].callback
-    menuCallbacks.MENU_CLASS_TALENT_PROFILE(nil, root)
-    assert(root.items[1].text == TM:T("MERGE") and root.items[2].text == TM:T("NUKE") and root.items[3].text == TM:T("CLEAN"))
-    assert(root.items[4].callback == originalCallback and root.items[4].text == "Raid")
-    for i = 4, 5 do
-        local font = { SetTextColor = function(self, r, g, b) self.r, self.g, self.b = r, g, b end }
-        for _, initializer in ipairs(root.items[i].initializers) do initializer({ fontString = font }) end
-        assert(font.r == 0.4 and font.g == 0.8 and font.b == 1)
-    end
+test("native loadout dropdown is untouched and registers no modifier", function()
+    local root=rootMenu()
+    local original=root.items[1].callback
+    TM:ModifyTalentMenu(nil,root)
+    assert(not menuCallbacks.MENU_CLASS_TALENT_PROFILE and #root.items==3)
+    assert(root.items[1].callback==original and root.items[1].text=="Raid")
+    for _,item in ipairs(root.items) do assert(#item.initializers==0) end
 end)
+
 test("inspect menu is unchanged", function()
     local root = rootMenu()
     talents.inspecting = true; TM:ModifyTalentMenu(nil, root)
@@ -207,7 +204,7 @@ test("menu generated before combat cannot open a mutation dialog during combat",
     local root = rootMenu(); TM:ModifyTalentMenu(nil, root)
     TM.dialog:Hide()
     combat = true
-    for i = 1, 3 do root.items[i].callback() end
+    TM:ShowMerge(); TM:ShowClean(); TM:ShowNuke()
     assert(not TM.dialog:IsShown() and builds[1].name == "Raid" and builds[2])
     combat = false; TM:Refresh()
 end)
@@ -364,7 +361,7 @@ test("every WoW locale renders all views and preserves build names and NUKE", fu
         context:ShowList()
         assert(context.mergeButton:GetText() == context:T("MERGE"), locale)
         local menu = rootMenu(); context:ModifyTalentMenu(nil, menu)
-        assert(menu.items[1].text == context:T("MERGE") and menu.items[2].text == context:T("NUKE"), locale)
+        assert(#menu.items==3 and menu.items[1].text=="Raid",locale)
         context:ShowMerge()
         assert(context.status:GetText() == context:T("MERGE_TITLE") and context.dialog.input:GetText() == "Raid/Mythic", locale)
         context:ShowClean()
@@ -500,7 +497,9 @@ test("visible refresh reads each spec once and reuses frames", function()
     TM:ShowList();timers={}
     local reads,frameCount=TM.readCount,#frames
     for i=1,50 do events.scripts.OnEvent(events,"TRAIT_CONFIG_UPDATED",1) end
-    assert(#timers==1);flush()
+    assert(#timers==0);flush()
+    assert(TM.readCount==reads)
+    TM:Refresh()
     assert(TM.readCount==reads+1 and #frames==frameCount)
     reads=TM.readCount
     for i=1,100 do TM:Refresh() end
@@ -528,5 +527,34 @@ test("ten-operation Undo history shares one spec read", function()
     local before=TM.readCount
     SlashCmdList.LAWKHSTALENTMERGER("memory")
     assert(TM.readCount==before)
+end)
+test("launcher opens the panel once and updates the duplicate badge", function()
+    TM.window:Hide()
+    local reads=TM.readCount
+    TM.openButton.scripts.OnClick(TM.openButton)
+    assert(TM.window:IsShown() and TM.view=="list" and TM.readCount==reads+1)
+    assert(TM.duplicateBadge.label:GetText()==TM:T("DUPLICATED_FOUND"))
+    TM:SetDuplicateStatus(0)
+    assert(TM.duplicateBadge.label:GetText()==TM:T("NO_DUPLICATED") and TM.duplicateBadge.icon.texture=="Interface/RaidFrame/ReadyCheck-Ready")
+    TM:SetDuplicateStatus(nil);assert(TM.duplicateBadge.label:GetText()==TM:T("NOT_CHECKED"))
+end)
+
+test("created saved loadout checks once without opening the panel", function()
+    TM.window:Hide();timers={};TM.lastCheckedCreation=nil
+    local reads=TM.readCount
+    events.scripts.OnEvent(events,"TRAIT_CONFIG_CREATED",1);flush()
+    assert(TM.readCount==reads+1 and not TM.window:IsShown())
+    events.scripts.OnEvent(events,"TRAIT_CONFIG_CREATED",1);flush()
+    assert(TM.readCount==reads+1)
+    events.scripts.OnEvent(events,"TRAIT_CONFIG_UPDATED",1);flush()
+    assert(TM.readCount==reads+1)
+end)
+
+test("changing selections and filters does not scan talents", function()
+    TM:ShowList();local reads=TM.readCount
+    TM.specCards[1].check:SetChecked(true);TM.specCards[1].check.scripts.OnClick(TM.specCards[1].check)
+    TM.hideUnique:SetChecked(true);TM.hideUnique.scripts.OnClick(TM.hideUnique)
+    TM:ShowMerge()
+    assert(TM.readCount==reads and TM.dialog.mergeRows[1]:IsShown())
 end)
 print(passed .. " UI tests passed")

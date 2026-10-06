@@ -44,7 +44,7 @@ function TM:CreateDashboard()
     self.hideUnique.label = self.hideUnique:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.hideUnique.label:SetPoint("RIGHT", self.hideUnique, "LEFT", -5, 0)
     self.hideUnique.label:SetText(T("HIDE_UNIQUE"))
-    self.hideUnique:SetScript("OnClick", function() if not InCombatLockdown() then self:RenderDashboard() end end)
+    self.hideUnique:SetScript("OnClick", function() if not InCombatLockdown() then self:RenderDashboard(self.dashboardSpecs) end end)
 end
 
 function TM:UpdateDashboardSelection()
@@ -65,9 +65,9 @@ local function Cell(parent)
     return f
 end
 
-function TM:RenderDashboard()
+function TM:RenderDashboard(snapshot)
     self:CreateDashboard()
-    local specs = self:Specializations()
+    local specs = snapshot or self:Specializations()
     self.dashboardSpecs = specs
     local width = math.max(760, #specs * 240 + 40)
     self.dashboardWidth = width
@@ -78,7 +78,7 @@ function TM:RenderDashboard()
     end
     for _, card in ipairs(self.specCards) do card:Hide() end
     local cardWidth = (width - 40 - (#specs - 1) * 12) / math.max(1, #specs)
-    local total, groupTotal = 0, 0
+    local total, groupTotal, unknown = 0, 0, false
     for i, spec in ipairs(specs) do
         local card = self.specCards[i]
         if not card then
@@ -110,6 +110,7 @@ function TM:RenderDashboard()
         local groups, colors = self:Group(spec.rows)
         if spec.id == self:SpecID() then self.rows, self.groups, self.colors = spec.rows, groups, colors end
         total = total + #spec.rows; groupTotal = groupTotal + #groups
+        for _, row in ipairs(spec.rows) do if not row.key then unknown = true end end
         local cellWidth=(cardWidth-12)/2
         card.loadouts:SetWidth(cellWidth);card.duplicates:SetWidth(cellWidth)
         card.loadouts.label:SetWidth(cellWidth-10);card.loadouts.label:SetHeight(34)
@@ -159,6 +160,7 @@ function TM:RenderDashboard()
         card.content:SetHeight(math.max(1, y)); card:Show()
     end
     if self.view == "list" then self.status:SetText(T("SUMMARY", total, groupTotal)) end
+    if groupTotal == 0 and unknown then self:SetDuplicateStatus(nil) else self:SetDuplicateStatus(groupTotal) end
     self:UpdateDashboardSelection()
 end
 
@@ -282,7 +284,7 @@ end
 
 function TM:SelectedDuplicateGroups()
     self:CreateWindow()
-    self:Refresh()
+    if not self.dashboardSpecs then self:ShowList() end
     local groups, count = {}, 0
     for _, spec in ipairs(self.dashboardSpecs or {}) do
         if self.selectedSpecs[spec.id] then

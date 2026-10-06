@@ -371,44 +371,53 @@ function TM:UpdateNukeSelection()
     self:UpdateCombatState()
 end
 
-function TM:ModifyTalentMenu(dropdown, root)
-    if not self:Supported() then return end
-    local talents = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
-    if talents and talents:IsInspecting() then return end
-    local rows = self:Read(self:SpecID())
-    local groups, colors = self:Group(rows)
-    -- Modify only menu descriptions. Preserve the native load callbacks and names.
-    for _, description in root:EnumerateElementDescriptions() do
-        local color = colors[description:GetData()]
-        if color then
-            local red = tonumber(color:sub(1, 2), 16) / 255
-            local green = tonumber(color:sub(3, 4), 16) / 255
-            local blue = tonumber(color:sub(5, 6), 16) / 255
-            description:AddInitializer(function(button)
-                if button.fontString then button.fontString:SetTextColor(red, green, blue) end
-            end)
-        end
+-- The native loadout dropdown is intentionally untouched.
+function TM:ModifyTalentMenu() end
+function TM:RegisterMenu() end
+
+function TM:SetDuplicateStatus(count)
+    self.lastDuplicateCount = count
+    if not self.duplicateBadge then return end
+    if count == nil then
+        self.duplicateBadge.label:SetText(T("NOT_CHECKED"))
+        self.duplicateBadge.label:SetTextColor(0.65, 0.65, 0.65)
+        self.duplicateBadge.icon:SetTexture("Interface/Icons/INV_Misc_QuestionMark")
+    elseif count == 0 then
+        self.duplicateBadge.label:SetText(T("NO_DUPLICATED"))
+        self.duplicateBadge.label:SetTextColor(0.35, 1, 0.45)
+        self.duplicateBadge.icon:SetTexture("Interface/RaidFrame/ReadyCheck-Ready")
+    else
+        self.duplicateBadge.label:SetText(T("DUPLICATED_FOUND"))
+        self.duplicateBadge.label:SetTextColor(1, 0.82, 0.1)
+        self.duplicateBadge.icon:SetTexture("Interface/DialogFrame/UI-Dialog-Icon-AlertNew")
     end
-    local merge = MenuUtil.CreateButton(T("MERGE"), function()
-        self:CreateWindow(); self:ShowMerge()
-    end)
-    local nuke = MenuUtil.CreateButton(T("NUKE"), function() self:ShowNuke() end)
-    local clean = MenuUtil.CreateButton(T("CLEAN"), function() self:ShowClean() end)
-    local ready = not InCombatLockdown() and not self.operation
-    merge:SetEnabled(ready)
-    clean:SetEnabled(ready)
-    nuke:SetEnabled(ready)
-    root:Insert(merge, 1)
-    root:Insert(nuke, 2)
-    root:Insert(clean, 3)
 end
 
-function TM:RegisterMenu()
-    if self.menuRegistered or not Menu or not Menu.ModifyMenu or not MenuUtil then return end
-    Menu.ModifyMenu("MENU_CLASS_TALENT_PROFILE", function(dropdown, root)
-        self:ModifyTalentMenu(dropdown, root)
-    end)
-    self.menuRegistered = true
+function TM:CheckDuplicates()
+    if not self:Supported() or InCombatLockdown() then self:SetDuplicateStatus(nil); return end
+    local count, unknown = 0, false
+    for _, spec in ipairs(self:Specializations()) do
+        count = count + #self:Group(spec.rows)
+        for _, row in ipairs(spec.rows) do if not row.key then unknown = true end end
+    end
+    if count == 0 and unknown then self:SetDuplicateStatus(nil) else self:SetDuplicateStatus(count) end
+end
+
+function TM:CheckCreatedLoadout(id, attempt)
+    if self.lastCheckedCreation == id then return end
+    if InCombatLockdown() or self.operation then self:SetDuplicateStatus(nil); return end
+    local info = C_Traits.GetConfigInfo(id)
+    if not info or id == C_ClassTalents.GetActiveConfigID() then return end
+    local saved = false
+    for _, savedID in ipairs(C_ClassTalents.GetConfigIDsBySpecID() or {}) do if savedID == id then saved = true; break end end
+    local populated = not C_ClassTalents.IsConfigPopulated or C_ClassTalents.IsConfigPopulated(id)
+    if not saved or not populated then
+        if attempt < 4 then C_Timer.After(0.25, function() self:CheckCreatedLoadout(id, attempt + 1) end) end
+        return
+    end
+    self.lastCheckedCreation = id
+    if self.window and self.window:IsShown() and self.view == "list" then self:Refresh()
+    else self:CheckDuplicates() end
 end
 
 function TM:Attach()
@@ -421,6 +430,17 @@ function TM:Attach()
     -- Keep the launcher away from the loadout menu, which opens above its anchor.
     open:SetPoint("TOPRIGHT", -45, -38)
     self.openButton = open
+    local badge = CreateFrame("Frame", nil, talents, "BackdropTemplate")
+    badge:SetPoint("TOPLEFT", open, "BOTTOMLEFT", 0, -4)
+    badge:SetSize(math.max(190, open:GetTextWidth() + 24), 28)
+    badge:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 8 })
+    badge:SetBackdropColor(0.04, 0.07, 0.10, 0.95)
+    badge.icon = badge:CreateTexture(nil, "ARTWORK")
+    badge.icon:SetPoint("LEFT", 6, 0); badge.icon:SetSize(18, 18)
+    badge.label = badge:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    badge.label:SetPoint("LEFT", 29, 0); badge.label:SetWidth(155); badge.label:SetJustifyH("LEFT")
+    self.duplicateBadge = badge
+    self:SetDuplicateStatus(self.lastDuplicateCount)
 end
 
 function TM:UpdateCombatState()
@@ -546,14 +566,12 @@ events:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" or event == "ADDON_LOADED" or event == "PLAYER_REGEN_ENABLED" then
         TM:RegisterMenu(); TM:Attach()
     end
-    -- No talent reads or UI construction for background events while closed.
-    if not TM.window or not TM.window:IsShown() or TM.view ~= "list" or InCombatLockdown() then return end
-    if TM.pendingRefresh then return end
-    TM.pendingRefresh = true
-    C_Timer.After(0.25, function()
-        TM.pendingRefresh = nil
-        if TM.window and TM.window:IsShown() and TM.view == "list" and not InCombatLockdown() then TM:Refresh() end
-    end)
+    -- New saved loadouts (including imports) get one check after population.
+    -- Ordinary config updates never schedule a background scan.
+    if event == "TRAIT_CONFIG_CREATED" and not TM.operation then
+        local id = ...
+        if type(id) == "number" then C_Timer.After(0.25, function() TM:CheckCreatedLoadout(id, 1) end) end
+    end
 end)
 
 SLASH_LAWKHSTALENTMERGER1 = "/tm"
@@ -562,8 +580,8 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
     command = command:lower():match("^%s*(.-)%s*$")
     if command == "memory" then TM:MemoryReport(); return end
     TM:CreateWindow()
-    TM:Refresh()
-    command = command:lower():match("^%s*(.-)%s*$")
+    TM:UpdateCombatState()
+    if command == "status" then TM:Refresh() end
     if command == "status" then
         TM:Message(T("STATUS", TM.version, TM:Supported() and T("OK") or T("UNAVAILABLE"),
             TM.menuRegistered and T("REGISTERED") or T("UNAVAILABLE"), #(TM.rows or {}), #(TM.groups or {})))
