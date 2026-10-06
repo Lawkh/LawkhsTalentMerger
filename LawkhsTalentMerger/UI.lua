@@ -51,6 +51,7 @@ function TM:CreateWindow()
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(530, 1)
     scroll:SetScrollChild(content)
+    self.listScroll = scroll
     self.content, self.widgets = content, {}
     -- Position 1 is Merge; Nuke sits immediately above Clean.
     self.mergeButton = Button(list, T("MERGE"), 110, function() self:ShowMerge() end)
@@ -60,6 +61,7 @@ function TM:CreateWindow()
     self.cleanButton = Button(list, T("CLEAN"), 110, function() self:ShowClean() end)
     self.cleanButton:SetPoint("BOTTOMRIGHT", -20, 22)
     local refresh = Button(list, T("REFRESH"), 110, function() self:Refresh() end)
+    self.refreshButton = refresh
     refresh:SetPoint("LEFT", self.mergeButton, "RIGHT", 12, 0)
     local hint = list:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOMLEFT", 20, 94)
@@ -156,7 +158,10 @@ function TM:Dialog(title, report, initial, required, callback)
         f.back = Button(f, T("BACK"), 120, function()
             if self.operation then
                 self.operation.cancelled = true
-                if not self.operation.awaiting then self:AdvanceDeletion(self.operation) end
+                if not self.operation.awaiting then
+                    if self.operation.kind == "restore" then self:AdvanceRestore(self.operation)
+                    else self:AdvanceDeletion(self.operation) end
+                end
                 self:UpdateCombatState()
             else self:ShowList() end
         end)
@@ -169,10 +174,13 @@ function TM:Dialog(title, report, initial, required, callback)
     local f = self.dialog
     self.window:SetSize(600, 510)
     self.status:SetWidth(550)
+    f.accept:Show()
+    for _, row in ipairs(f.historyRows or {}) do row:Hide() end
     f.report:Show()
     f.scroll:Show()
     f.input:SetWidth(530)
     f.error:SetWidth(530)
+    f.restoreSpec = nil
     f.nukeState = nil
     if f.nukeBoard then f.nukeBoard:Hide(); f.nukeIntro:Hide(); f.nukeSummary:Hide() end
     self.view = "confirm"
@@ -510,6 +518,7 @@ for _, event in ipairs({ "PLAYER_LOGIN", "ADDON_LOADED", "TRAIT_CONFIG_UPDATED",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do events:RegisterEvent(event) end
 events:SetScript("OnEvent", function(_, event, ...)
     if event == "TRAIT_CONFIG_DELETED" then TM:ConfirmDeletion(...) end
+    if TM.ConfirmRestore and (event == "TRAIT_CONFIG_CREATED" or event == "TRAIT_CONFIG_UPDATED" or event == "TRAIT_CONFIG_LIST_UPDATED") then TM:ConfirmRestore() end
     if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         TM:UpdateCombatState()
     end

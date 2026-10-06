@@ -1,6 +1,6 @@
 local _, TM = ...
 local function T(key, ...) return TM:T(key, ...) end
-TM.version = "0.4.0"
+TM.version = "0.5.0"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -186,10 +186,11 @@ function TM:Backup(rows, action)
     local backup = { time = time(), action = action, builds = {} }
     for _, row in ipairs(rows) do
         if not row.export then return false, T("EXPORT_FAILED", row.name) end
-        backup.builds[#backup.builds + 1] = { name = row.name, spec = row.spec, export = row.export }
+        backup.builds[#backup.builds + 1] = { id = row.id, name = row.name, spec = row.spec, export = row.export, key = row.key }
     end
     table.insert(LawkhsTalentMergerDB.backups, 1, backup)
     while #LawkhsTalentMergerDB.backups > 10 do table.remove(LawkhsTalentMergerDB.backups) end
+    self.lastBackup = backup
     return true
 end
 
@@ -209,6 +210,11 @@ function TM:ConfirmDeletion(id)
     if not op or op.awaiting ~= id then return end
     op.awaiting = nil
     op.deleted = op.deleted + 1
+    if op.backup then
+        for _, build in ipairs(op.backup.builds) do
+            if build.id == id then build.removed = true end
+        end
+    end
     op.index = op.index + 1
     op.retries = 0
     if self.UpdateCombatState then self:UpdateCombatState() end
@@ -247,7 +253,7 @@ end
 
 function TM:DeleteRows(rows)
     if self.operation then return false, T("BUSY") end
-    local op = { rows = rows, index = 1, deleted = 0, retries = 0 }
+    local op = { rows = rows, index = 1, deleted = 0, retries = 0, backup = self.lastBackup }
     self.operation = op
     self:AdvanceDeletion(op)
     if self.operation == op then return "pending" end
@@ -280,6 +286,7 @@ function TM:Merge(group, name)
         local reason = T("RENAME_FAILED")
         self:Message(reason); return false, reason
     end
+    self.lastBackup.builds[1].renamedTo = name
     local remove = {}
     for i = 2, #group.rows do remove[#remove + 1] = group.rows[i] end
     return self:DeleteRows(remove)

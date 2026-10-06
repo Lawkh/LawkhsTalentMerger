@@ -80,7 +80,7 @@ function methods:Hide()
 end
 function methods:IsShown() return self.shown end
 function CreateFrame(kind, name, parent)
-    local frame = setmetatable({ kind = kind, name = name, parent = parent, scripts = {}, hooks = {}, events = {}, shown = true }, { __index = methods })
+    local frame = setmetatable({ kind = kind, name = name, parent = parent, scripts = {}, hooks = {}, events = {}, shown = true, enabled = true }, { __index = methods })
     frames[#frames + 1] = frame
     if name then _G[name] = frame end
     return frame
@@ -369,5 +369,61 @@ test("every WoW locale renders all views and preserves build names and NUKE", fu
         context.window:Hide()
     end
     GetLocale = function() return "esES" end
+end)
+assert(loadfile("LawkhsTalentMerger/Restore.lua"))("LawkhsTalentMerger", TM)
+assert(loadfile("LawkhsTalentMerger/Dashboard.lua"))("LawkhsTalentMerger", TM)
+
+test("main view owns specialization columns, separate scrolls and Undo action", function()
+    local info,count,getIDs=C_SpecializationInfo.GetSpecializationInfo,C_SpecializationInfo.GetNumSpecializationsForClassID,C_ClassTalents.GetConfigIDsBySpecID
+    C_SpecializationInfo.GetSpecializationInfo=function(i) return 70+i, i==1 and "Arms" or "Fury", "",1000+i end
+    C_SpecializationInfo.GetNumSpecializationsForClassID=function() return 2 end
+    C_ClassTalents.GetConfigIDsBySpecID=function(spec) return spec==72 and {} or {1,2} end
+    TM:ShowList()
+    assert(TM.dashboard and TM.undoButton and #TM.specCards==2 and not TM.listScroll:IsShown())
+    assert(TM.specCards[1].icon.texture==1001 and TM.specCards[2].name:GetText()=="Fury")
+    assert(TM.specCards[1].scroll~=TM.specCards[2].scroll and not TM.specCards[2].check.enabled)
+    local oldDialog=TM.dialog
+    TM:ShowNuke(); assert(TM.view=="list" and TM.dialog==oldDialog)
+    local card=TM.specCards[1]
+    card.check:SetChecked(true);card.check.scripts.OnClick(card.check)
+    TM:ShowNuke();assert(TM.view=="confirm" and not TM.dialog.nukeState)
+    assert(TM.dialog.report:GetText():find("Arms",1,true) and TM.dialog.required=="NUKE")
+    TM.dialog.input:SetText("NUKE");assert(TM.dialog.accept.enabled)
+    combat=true;TM:UpdateCombatState();assert(not card.check.enabled and not TM.undoButton.enabled)
+    combat=false;TM:ShowList()
+    C_SpecializationInfo.GetSpecializationInfo,C_SpecializationInfo.GetNumSpecializationsForClassID,C_ClassTalents.GetConfigIDsBySpecID=info,count,getIDs
+end)
+
+test("history and restore preview reuse the same root and reset controls", function()
+    LawkhsTalentMergerDB={backups={{time=123,action="Clean",builds={{name="Deleted",spec=71,export="DELETED"}}}}}
+    TM:ShowHistory()
+    assert(TM.view=="history" and not TM.dialog.accept:IsShown())
+    local root=TM.window
+    local row=TM.dialog.historyRows[2]
+    assert(row.button:IsShown() and row.callback)
+    row.button.scripts.OnClick(row.button)
+    assert(TM.window==root and TM.view=="confirm" and TM.dialog.accept:IsShown())
+    assert(TM.dialog.report:GetText():find("Deleted",1,true) and not TM.dialog.historyRows[1]:IsShown())
+    TM:ShowList();TM:ShowHistory()
+    combat=true;TM:UpdateCombatState();assert(not row.button.enabled);combat=false
+    TM:ShowList()
+end)
+
+test("new dashboard and history load in TOC order in every locale", function()
+    for _,locale in ipairs({"enUS","enGB","deDE","esES","esMX","frFR","itIT","ptBR","ruRU","koKR","zhCN","zhTW"}) do
+        GetLocale=function() return locale end
+        local context={}
+        for _,file in ipairs({"Localization","Core","UI","Restore","Dashboard"}) do
+            assert(loadfile("LawkhsTalentMerger/"..file..".lua"))("LawkhsTalentMerger",context)
+        end
+        context.Message=function() end
+        context:ShowList();assert(context.undoButton:GetText()==context:T("UNDO"))
+        context.specCards[1].check:SetChecked(true);context.specCards[1].check.scripts.OnClick(context.specCards[1].check)
+        context:ShowNuke();context.dialog.input:SetText("NUKE");assert(context.dialog.accept.enabled)
+        context:ShowHistory();assert(context.view=="history" and not context.dialog.accept:IsShown())
+        context:ShowMerge();assert(context.dialog.accept:IsShown() and context.dialog.input:GetText()=="Raid/Mythic")
+        context.window:Hide()
+    end
+    GetLocale=function() return "esES" end
 end)
 print(passed .. " UI tests passed")

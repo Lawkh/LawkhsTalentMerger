@@ -8,11 +8,12 @@ Lawkh's Talent Merger compares selected talents and ranks, including Hero Talent
 
 - **Merge:** choose a duplicate group and enter a name for the resulting loadout. The addon suggests a combined name such as `Raid/Mythic+/PvP`. It renames the first loadout and removes the other identical copies, preserving the first loadout's settings.
 - **Clean:** review exactly which loadouts will be kept and deleted. The first loadout in each duplicate group is kept, along with all unique loadouts.
-- **Nuke:** review saved loadouts in separate specialization columns, each with its own icon and scrolling list. Select one or more specializations to delete only their saved loadouts; unchecked specializations are preserved. No specialization is selected by default. Type exactly `NUKE` to confirm. Changing the selection clears the confirmation word. Active talents are not reset.
+- **Main window:** specialization columns with native icons, duplicate groups, per-group Merge buttons and independent scrolling. Select the specializations you want to manage with Nuke.
+- **Nuke:** preview the saved loadouts in the selected specializations and type exactly `NUKE` to confirm. Unchecked specializations and active talents are preserved.
 - **One window:** the list, previews, confirmations, progress and errors share the same window.
 - **Controlled deletion:** loadouts are deleted one at a time, waiting for WoW confirmation. Additional operations are blocked while deletion is in progress. Use **Stop** to stop further requests.
 - **Checks before changing loadouts:** operations are blocked during combat, while dead or a ghost, and while talent changes are pending. The confirmed loadouts are checked again before each deletion.
-- **Backups:** original names, specializations and talent export strings are saved for the last 10 operations. Backups can be recovered manually from the character's SavedVariables and imported through WoW's talent interface. There is currently no in-game restore screen.
+- **Undo:** browse the last 10 operations and restore the missing loadouts per specialization, with a preview. Activate the specialization and open your talent tree first. Restores names and talents, preserves existing copies, and can undo the Merge rename when its survivor is unchanged. Action bars and equipment sets are not included in backups. Older backups remain usable.
 
 ## How to use
 

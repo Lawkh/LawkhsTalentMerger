@@ -331,4 +331,135 @@ test("partial node data cannot produce an incomplete comparison signature", func
         assert(rows[1].key ~= rows[2].key and rows[2].key == "export:AAA")
     end)
 end)
+assert(loadfile("LawkhsTalentMerger/Restore.lua"))("LawkhsTalentMerger", TM)
+local imported = 0
+local realImport = TM.ImportBackup
+TM.ImportBackup = function(_, build)
+    imported = imported + 1
+    local id = 100 + imported
+    builds[id] = {name = build.name, key = build.export}
+    ids[build.spec][#ids[build.spec] + 1] = id
+    return true
+end
+
+test("Undo Clean restores only missing copies and is idempotent", function()
+    TM:Clean(TM:Group(TM:Read(71)))
+    local backup = LawkhsTalentMergerDB.backups[1]
+    assert(backup.builds[2].removed and #TM:RestorePlan(backup, 71) == 2)
+    local before = imported
+    local ok = TM:Restore(backup, 71)
+    assert(ok and imported == before + 2 and #TM:RestorePlan(backup, 71) == 0)
+    assert(TM:Restore(backup, 71) == false and imported == before + 2)
+end)
+
+test("Undo Merge restores survivor name and deleted duplicate", function()
+    TM:Merge(TM:Group(TM:Read(71))[1], "Merged")
+    local backup = LawkhsTalentMergerDB.backups[1]
+    assert(backup.builds[1].renamedTo == "Merged")
+    assert(TM:Restore(backup, 71))
+    assert(builds[1].name == "Raid" and #TM:RestorePlan(backup, 71) == 0)
+end)
+
+test("Undo uses multiset matching for identical names and legacy backups", function()
+    local backup = {builds = {{name="Raid", spec=71, export="AAA"}, {name="Raid", spec=71, export="AAA"}}}
+    assert(#TM:RestorePlan(backup, 71) == 1)
+    assert(TM:Restore(backup, 71))
+    assert(#TM:RestorePlan(backup, 71) == 0)
+end)
+
+test("Undo blocks wrong spec, combat and dead player", function()
+    local backup = {builds = {{name="Old", spec=72, export="OLD"}}}
+    local before = imported
+    assert(TM:Restore(backup, 72) == false)
+    backup.builds[1].spec = 71
+    combat = true; assert(TM:Restore(backup, 71) == false); combat = false
+    UnitIsDeadOrGhost = function() return true end
+    assert(TM:Restore(backup, 71) == false and imported == before)
+    UnitIsDeadOrGhost = nil
+end)
+
+test("Undo partial Clean restores confirmed deletions but keeps untouched copies", function()
+    failedID = 5
+    TM:Clean(TM:Group(TM:Read(71)))
+    local backup = LawkhsTalentMergerDB.backups[1]
+    assert(#TM:RestorePlan(backup, 71) == 1 and builds[5])
+    assert(TM:Restore(backup, 71) and #TM:RestorePlan(backup, 71) == 0)
+end)
+
+test("Undo preserves edited Merge survivor and does not rename it", function()
+    TM:Merge(TM:Group(TM:Read(71))[1], "Merged")
+    local backup = LawkhsTalentMergerDB.backups[1]
+    builds[1].key = "EDITED"
+    assert(#TM:RestorePlan(backup, 71) == 1)
+    assert(TM:Restore(backup, 71) and builds[1].name == "Merged" and builds[1].key == "EDITED")
+end)
+
+test("Undo import refusal stops and keeps backup retryable", function()
+    local fn = TM.ImportBackup
+    TM.ImportBackup = function() return false, "Loadout cap" end
+    local backup = {builds = {{name="Old", spec=71, export="OLD"}}}
+    local ok, reason = TM:Restore(backup, 71)
+    assert(not ok and reason:find("Loadout cap",1,true) and not TM.operation)
+    assert(#TM:RestorePlan(backup, 71) == 1)
+    TM.ImportBackup = fn
+end)
+
+test("Undo waits for matching server config, unrelated events do not complete", function()
+    local fn, timer = TM.ImportBackup, C_Timer.After
+    local callbacks = {}
+    C_Timer.After = function(_, callback) callbacks[#callbacks+1] = callback end
+    TM.ImportBackup = function() return true end
+    local backup = {builds = {{name="Old", spec=71, export="OLD"}, {name="Next", spec=71, export="NEXT"}}}
+    assert(TM:Restore(backup, 71) == "pending")
+    builds[90] = {name="Unrelated", key="OTHER"}; ids[71][#ids[71]+1] = 90
+    TM:ConfirmRestore(); assert(TM.operation.deleted == 0)
+    builds[91] = {name="Old", key="OLD"}; ids[71][#ids[71]+1] = 91
+    TM:ConfirmRestore(); assert(TM.operation.deleted == 1)
+    TM.operation.cancelled = true
+    callbacks[#callbacks]()
+    assert(not TM.operation and #TM:RestorePlan(backup,71) == 1)
+    TM.ImportBackup, C_Timer.After = fn, timer
+end)
+
+test("Blizzard import decoder checks version, spec and hash without switching builds", function()
+    local oldFrame, oldExport, importFn = PlayerSpellsFrame, ExportUtil, C_ClassTalents.ImportLoadout
+    local version, spec, empty, same, calls = 1, 71, false, true, 0
+    ExportUtil = {MakeImportDataStream=function() return {} end}
+    PlayerSpellsFrame = {TalentsFrame = {
+        IsInspecting=function() return false end, GetSpecID=function() return 71 end,
+        ReadLoadoutHeader=function() return true,version,spec,{} end,
+        GetTreeInfo=function() return {ID=1} end, IsHashEmpty=function() return empty end,
+        HashEquals=function() return same end, ReadLoadoutContent=function() return {} end,
+        ConvertToImportLoadoutEntryInfo=function() return {1} end,
+    }}
+    C_Traits.GetLoadoutSerializationVersion=function() return 1 end
+    C_Traits.GetTreeHash=function() return {} end
+    C_ClassTalents.ImportLoadout=function(id, entries, name, export)
+        assert(id==7 and entries[1]==1 and name=="Old" and export=="OLD"); calls=calls+1; return true
+    end
+    local build={name="Old",spec=71,export="OLD"}
+    assert(realImport(TM,build) and calls==1)
+    version=2; assert(not realImport(TM,build)); version=1
+    spec=72; assert(not realImport(TM,build)); spec=71
+    same=false; assert(not realImport(TM,build) and calls==1)
+    PlayerSpellsFrame, ExportUtil, C_ClassTalents.ImportLoadout=oldFrame,oldExport,importFn
+end)
+test("old restore timeout cannot abort the next import", function()
+    local fn,timer=TM.ImportBackup,C_Timer.After
+    local callbacks={}
+    C_Timer.After=function(delay,callback) callbacks[#callbacks+1]={delay=delay,fn=callback} end
+    TM.ImportBackup=function(_,build)
+        if build.name=="First" then builds[91]={name="First",key="FIRST"};ids[71][#ids[71]+1]=91 end
+        return true
+    end
+    local backup={builds={{name="First",spec=71,export="FIRST"},{name="Second",spec=71,export="SECOND"}}}
+    assert(TM:Restore(backup,71)=="pending" and TM.operation.index==2)
+    callbacks[1].fn()
+    assert(TM.operation.awaiting and TM.operation.index==2)
+    callbacks[2].fn()
+    assert(TM.operation and TM.operation.index==2)
+    callbacks[3].fn()
+    assert(not TM.operation and #TM:RestorePlan(backup,71)==1)
+    TM.ImportBackup,C_Timer.After=fn,timer
+end)
 print(passed .. " tests passed")
