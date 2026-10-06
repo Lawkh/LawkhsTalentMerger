@@ -169,6 +169,8 @@ function TM:ShowHistory()
     self.view = "history"
     if not f.historyRows then f.historyRows = {} end
     for _, row in ipairs(f.historyRows) do row:Hide() end
+    local historySpecs = self:Specializations()
+    self:PruneUndoHistory(historySpecs)
     local backups = LawkhsTalentMergerDB and LawkhsTalentMergerDB.backups or {}
     local n, y = 0, f.report:GetStringHeight() + 20
     local function Row(text, callback)
@@ -191,7 +193,7 @@ function TM:ShowHistory()
     for _, backup in ipairs(backups) do
         local stamp = date and date("%d/%m %H:%M", backup.time) or tostring(backup.time)
         Row("|cffffcc66" .. T(backup.action:upper()) .. " · " .. stamp .. "|r")
-        for _, spec in ipairs(self:Specializations()) do
+        for _, spec in ipairs(historySpecs) do
             local count = 0
             for _, build in ipairs(backup.builds) do if build.spec == spec.id then count = count + 1 end end
             if count > 0 then

@@ -50,10 +50,35 @@ function TM:ImportBackup(build)
     return C_ClassTalents.ImportLoadout(configID, entries, build.name, build.export)
 end
 
+function TM:RemoveUndoSpec(backup, specID)
+    for i = #backup.builds, 1, -1 do
+        if backup.builds[i].spec == specID then table.remove(backup.builds, i) end
+    end
+    if #backup.builds == 0 then
+        local backups = LawkhsTalentMergerDB and LawkhsTalentMergerDB.backups or {}
+        for i = #backups, 1, -1 do
+            if backups[i] == backup then table.remove(backups, i); break end
+        end
+    end
+end
+
+function TM:PruneUndoHistory(specs)
+    if InCombatLockdown() or self.operation then return end
+    local backups = LawkhsTalentMergerDB and LawkhsTalentMergerDB.backups or {}
+    for i = #backups, 1, -1 do
+        local backup = backups[i]
+        for _, spec in ipairs(specs) do
+            if #self:RestorePlan(backup, spec.id) == 0 then self:RemoveUndoSpec(backup, spec.id) end
+        end
+    end
+end
+
 function TM:FinishRestore(op, success, reason)
     if self.operation ~= op then return end
     self.operation = nil
     op.success = success
+    -- Remove completed scopes; keep other specs and failed work available.
+    if success then self:RemoveUndoSpec(op.backup, op.spec) end
     op.message = (reason and reason .. " " or "") .. T("RESTORE_RESULT", op.deleted, #op.rows)
     self:Message(op.message)
     self:Refresh()

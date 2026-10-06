@@ -486,4 +486,40 @@ test("batch Merge validates every name and snapshot before any mutation", functi
     builds[5].name="Changed"
     assert(TM:MergeMany(groups,{"Good","Good too"})==false and not next(renamed) and #deleted==0)
 end)
+test("completed restore removes its spec from Undo and drops empty operations", function()
+    local backup={time=123,action="Nuke",builds={{name="Old Arms",spec=71,export="OLD"},{name="Old Fury",spec=72,export="FURY"}}}
+    LawkhsTalentMergerDB={backups={backup}}
+    assert(TM:Restore(backup,71))
+    assert(#backup.builds==1 and backup.builds[1].spec==72 and #LawkhsTalentMergerDB.backups==1)
+    TM:RemoveUndoSpec(backup,72)
+    assert(#LawkhsTalentMergerDB.backups==0)
+end)
+
+test("failed restore retains the missing work in Undo", function()
+    local fn=TM.ImportBackup
+    TM.ImportBackup=function(_,build)
+        if build.name=="Second" then return false,"Rejected" end
+        return fn(TM,build)
+    end
+    local backup={time=123,action="Nuke",builds={{name="First",spec=71,export="FIRST"},{name="Second",spec=71,export="SECOND"}}}
+    LawkhsTalentMergerDB={backups={backup}}
+    assert(TM:Restore(backup,71)==false)
+    assert(#LawkhsTalentMergerDB.backups==1)
+    local pending=TM:RestorePlan(backup,71)
+    assert(#pending==1 and pending[1].build.name=="Second")
+    TM:PruneUndoHistory(TM:Specializations())
+    assert(#LawkhsTalentMergerDB.backups==1)
+    TM.ImportBackup=fn
+end)
+
+test("Undo cleans older restored entries but keeps pending specs", function()
+    local complete={time=123,action="Clean",builds={{name="Raid",spec=71,export="AAA"}}}
+    local mixed={time=123,action="Nuke",builds={{name="Raid",spec=71,export="AAA"},{name="Missing Fury",spec=72,export="MISSING"}}}
+    LawkhsTalentMergerDB={backups={complete,mixed}}
+    combat=true;TM:PruneUndoHistory({{id=71},{id=72}})
+    assert(#LawkhsTalentMergerDB.backups==2);combat=false
+    TM:PruneUndoHistory(TM:Specializations())
+    assert(#LawkhsTalentMergerDB.backups==1 and LawkhsTalentMergerDB.backups[1]==mixed)
+    assert(#mixed.builds==1 and mixed.builds[1].spec==72)
+end)
 print(passed .. " tests passed")
