@@ -1,6 +1,6 @@
 local _, TM = ...
 local function T(key, ...) return TM:T(key, ...) end
-TM.version = "0.7.0"
+TM.version = "0.7.1"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()

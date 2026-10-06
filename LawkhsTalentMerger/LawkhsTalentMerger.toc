@@ -1,5 +1,6 @@
 ## Interface: 120100
 ## Title: Lawkh's Talent Merger
+## IconTexture: Interface\AddOns\LawkhsTalentMerger\Icon.tga
 ## Notes: Group, merge and clean duplicate talent loadouts.
 ## Notes-enUS: Group, merge and clean duplicate talent loadouts.
 ## Notes-esES: Agrupa, fusiona y limpia builds de talentos repetidas.
@@ -16,7 +17,7 @@
 ## Author: Lawkh
 ## X-Curse-Project-ID: 1729137
 ## X-Website: https://github.com/Lawkh/LawkhsTalentMerger
-## Version: 0.7.0
+## Version: 0.7.1
 ## OptionalDeps: TalentTreeTweaks, RaiderIO
 ## SavedVariablesPerCharacter: LawkhsTalentMergerDB
 Localization.lua
