@@ -90,6 +90,8 @@ function TM:ShowList(message)
         self.dialog.callback = nil
     end
     self.view = "list"
+    self.window:SetSize(600, 510)
+    self.status:SetWidth(550)
     self.listPanel:Show()
     self.window:Show()
     self:Refresh()
@@ -129,6 +131,7 @@ function TM:Dialog(title, report, initial, required, callback)
         f.accept = Button(f, T("CONFIRM"), 120, function()
             if self.operation or not f.callback then return end
             local value = f.input:GetText()
+            if f.nukeState and #f.nukeState.rows == 0 then f.error:SetText(T("NUKE_NO_SELECTION")); return end
             if f.required and value ~= f.required then f.error:SetText(T("TYPE_EXACT", f.required)); return end
             if f.needsName and not value:match("%S") then f.error:SetText(T("NAME_REQUIRED")); return end
             if InCombatLockdown() then f.error:SetText(T("COMBAT")); return end
@@ -159,13 +162,19 @@ function TM:Dialog(title, report, initial, required, callback)
         end)
         f.back:SetPoint("BOTTOMLEFT", 0, 0)
         f.input:SetScript("OnTextChanged", function(box)
-            f.accept:SetEnabled(not self.operation and f.callback ~= nil and not InCombatLockdown() and
-                (not f.required or box:GetText() == f.required) and
-                (not f.needsName or box:GetText():match("%S") ~= nil))
+            self:UpdateCombatState()
         end)
         f.input:SetScript("OnEscapePressed", function() f.back:GetScript("OnClick")(f.back) end)
     end
     local f = self.dialog
+    self.window:SetSize(600, 510)
+    self.status:SetWidth(550)
+    f.report:Show()
+    f.scroll:Show()
+    f.input:SetWidth(530)
+    f.error:SetWidth(530)
+    f.nukeState = nil
+    if f.nukeBoard then f.nukeBoard:Hide(); f.nukeIntro:Hide(); f.nukeSummary:Hide() end
     self.view = "confirm"
     self.listPanel:Hide()
     f.callback, f.required, f.needsName = callback, required, initial ~= nil and not required
@@ -223,16 +232,117 @@ function TM:ShowNuke()
     if self.operation then self:Message(T("BUSY")); return end
     if InCombatLockdown() then self:Message(T("COMBAT")); return end
     self:CreateWindow()
-    local rows = self:AllRows()
-    if #rows == 0 then self:Message(T("NO_SAVED")); return end
-    local lines = { T("NUKE_INTRO") }
-    for _, row in ipairs(rows) do
-        local _, specName = GetSpecializationInfoForSpecID(row.spec)
-        lines[#lines + 1] = T("REMOVE", "[" .. (specName or tostring(row.spec)) .. "] " .. row.name)
+    local specs = self:Specializations()
+    local total = 0
+    for _, spec in ipairs(specs) do total = total + #spec.rows end
+    if total == 0 then self:Message(T("NO_SAVED")); return end
+    local state = { specs = specs, selected = {}, rows = {} }
+    self:Dialog(T("NUKE_SELECT_TITLE"), "", "", "NUKE", function(token)
+        local scope = {}
+        for id, checked in pairs(state.selected) do if checked then scope[id] = true end end
+        return self:Nuke(state.rows, token, scope)
+    end)
+    local f = self.dialog
+    f.nukeState = state
+    local width = math.max(600, #specs * 230 + 40)
+    self.window:SetSize(width, 600)
+    self.status:SetWidth(width - 50)
+    f.input:SetWidth(width - 50)
+    f.error:SetWidth(width - 40)
+    f.scroll:Hide()
+    if not f.nukeBoard then
+        f.nukeBoard = CreateFrame("Frame", nil, f)
+        f.nukeBoard:SetPoint("TOPLEFT", 0, -80)
+        f.nukeBoard:SetPoint("BOTTOMRIGHT", 0, 185)
+        f.nukeIntro = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        f.nukeIntro:SetPoint("TOPLEFT", 0, 0)
+        f.nukeIntro:SetJustifyH("LEFT")
+        f.nukeSummary = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        f.nukeSummary:SetPoint("BOTTOMLEFT", 0, 35)
+        f.nukeSummary:SetJustifyH("LEFT")
+        f.nukeCards = {}
     end
-    lines[#lines + 1] = T("NUKE_PROMPT")
-    self:Dialog(T("NUKE_TITLE"), table.concat(lines, "\n"), "", "NUKE",
-        function(token) return self:Nuke(rows, token) end)
+    f.nukeIntro:SetWidth(width - 40)
+    f.nukeIntro:SetHeight(70)
+    f.nukeIntro:SetText(T("NUKE_SELECT_INTRO"))
+    f.nukeSummary:SetWidth(width - 40)
+    f.nukeSummary:SetHeight(25)
+    for _, card in ipairs(f.nukeCards) do card:Hide() end
+    local cardWidth = (width - 40 - (#specs - 1) * 12) / #specs
+    for i, spec in ipairs(specs) do
+        local card = f.nukeCards[i]
+        if not card then
+            card = CreateFrame("Frame", nil, f.nukeBoard, "BackdropTemplate")
+            card:SetBackdrop({ bgFile = "Interface/Tooltips/UI-Tooltip-Background", edgeFile = "Interface/Tooltips/UI-Tooltip-Border", edgeSize = 12 })
+            card:SetBackdropColor(0.08, 0.10, 0.14, 0.95)
+            card.check = CreateFrame("CheckButton", nil, card, "UICheckButtonTemplate")
+            card.check:SetSize(26, 26)
+            card.check:SetPoint("TOPLEFT", 8, -10)
+            card.icon = card:CreateTexture(nil, "ARTWORK")
+            card.icon:SetSize(32, 32)
+            card.icon:SetPoint("TOPLEFT", 38, -8)
+            card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            card.name:SetPoint("TOPLEFT", 78, -8)
+            card.name:SetJustifyH("LEFT")
+            card.count = card:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            card.count:SetPoint("TOPLEFT", 10, -48)
+            local scroll = CreateFrame("ScrollFrame", nil, card, "UIPanelScrollFrameTemplate")
+            scroll:SetPoint("TOPLEFT", 10, -72)
+            scroll:SetPoint("BOTTOMRIGHT", -28, 12)
+            card.content = CreateFrame("Frame", nil, scroll)
+            scroll:SetScrollChild(card.content)
+            card.builds = card.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            card.builds:SetPoint("TOPLEFT")
+            card.builds:SetJustifyH("LEFT")
+            card.scroll = scroll
+            f.nukeCards[i] = card
+        end
+        card.spec = spec
+        -- Replace the handler each opening so it captures the current selection snapshot.
+        card.check:SetScript("OnClick", function(box)
+            if self.operation or InCombatLockdown() then box:SetChecked(state.selected[card.spec.id] or false); return end
+            state.selected[card.spec.id] = box:GetChecked()
+            f.input:SetText("")
+            self:UpdateNukeSelection()
+        end)
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", (i - 1) * (cardWidth + 12), 0)
+        card:SetPoint("BOTTOMLEFT", (i - 1) * (cardWidth + 12), 0)
+        card:SetWidth(cardWidth)
+        card.icon:SetTexture(spec.icon or "Interface/Icons/INV_Misc_QuestionMark")
+        card.name:SetWidth(cardWidth - 86)
+        card.name:SetHeight(36)
+        card.name:SetText(spec.name)
+        card.count:SetText(T("SPEC_LOADOUT_COUNT", #spec.rows))
+        card.content:SetWidth(cardWidth - 38)
+        card.builds:SetWidth(cardWidth - 38)
+        local _, colors = self:Group(spec.rows)
+        local names = {}
+        for _, row in ipairs(spec.rows) do names[#names + 1] = self:Colored(row, colors[row.id]) end
+        card.builds:SetText(#names > 0 and table.concat(names, "\n") or T("NO_SAVED"))
+        card.content:SetHeight(math.max(1, card.builds:GetStringHeight() + 12))
+        card.scroll:SetVerticalScroll(0)
+        card.check:SetChecked(false)
+        card:Show()
+    end
+    f.nukeBoard:Show(); f.nukeIntro:Show(); f.nukeSummary:Show()
+    self:UpdateNukeSelection()
+end
+
+function TM:UpdateNukeSelection()
+    local f = self.dialog
+    if not f or not f.nukeState then return end
+    local state = f.nukeState
+    state.rows = {}
+    local count = 0
+    for _, spec in ipairs(state.specs) do
+        if state.selected[spec.id] then
+            count = count + 1
+            for _, row in ipairs(spec.rows) do state.rows[#state.rows + 1] = row end
+        end
+    end
+    f.nukeSummary:SetText(T("NUKE_SELECTION_COUNT", count, #state.rows))
+    self:UpdateCombatState()
 end
 
 function TM:ModifyTalentMenu(dropdown, root)
@@ -300,7 +410,7 @@ function TM:UpdateCombatState()
     local f = self.dialog
     if f and f:IsShown() then
         local value = f.input:GetText()
-        f.accept:SetEnabled(ready and f.callback ~= nil and (not f.required or value == f.required) and
+        f.accept:SetEnabled(ready and f.callback ~= nil and (not f.nukeState or #f.nukeState.rows > 0) and (not f.required or value == f.required) and
             (not f.needsName or value:match("%S") ~= nil))
         if self.operation then
             f.error:SetText(T("PROGRESS", self.operation.deleted, #self.operation.rows,
@@ -310,6 +420,13 @@ function TM:UpdateCombatState()
             f.error:SetText(T("COMBAT"))
         elseif f.error:GetText() == T("COMBAT") then
             f.error:SetText("")
+        end
+        if f.nukeState then
+            for _, card in ipairs(f.nukeCards) do
+                card.check:SetEnabled(ready and #card.spec.rows > 0)
+                card:SetBackdropBorderColor(f.nukeState.selected[card.spec.id] and 1 or 0.3,
+                    f.nukeState.selected[card.spec.id] and 0.7 or 0.35, 0.2)
+            end
         end
     end
 end

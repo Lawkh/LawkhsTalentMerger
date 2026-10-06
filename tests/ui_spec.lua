@@ -49,7 +49,8 @@ local methods = {}
 for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFrameStrata", "SetClampedToScreen",
     "SetMovable", "EnableMouse", "RegisterForDrag", "SetBackdropColor", "SetJustifyH", "SetScrollChild",
     "SetAutoFocus", "SetMaxLetters", "SetFocus", "HighlightText", "SetVerticalScroll", "StartMoving", "StopMovingOrSizing",
-    "RegisterForClicks", "SetToplevel", "SetFrameLevel", "SetTextColor", "SetAllPoints", "SetColorTexture", "ClearFocus" }) do
+    "RegisterForClicks", "SetToplevel", "SetFrameLevel", "SetTextColor", "SetAllPoints", "SetColorTexture", "ClearFocus",
+    "ClearAllPoints", "SetTexture", "SetBackdropBorderColor" }) do
     methods[name] = function() end
 end
 function methods:GetFrameLevel() return 1 end
@@ -67,6 +68,9 @@ end
 function methods:GetText() return self.text or "" end
 function methods:GetStringHeight() return 100 end
 function methods:SetEnabled(value) self.enabled = value end
+function methods:SetChecked(value) self.checked = value end
+function methods:GetChecked() return self.checked end
+function methods:SetTexture(value) self.texture = value end
 function methods:SetShown(value) self.shown = value end
 function methods:Show() self.shown = true end
 function methods:Hide()
@@ -103,6 +107,14 @@ local function flush()
 end
 local passed = 0
 local function test(name, fn) fn(); passed = passed + 1; print("PASS " .. name) end
+local function selectNukeColumns(context)
+    for _, card in ipairs(context.dialog.nukeCards) do
+        if #card.spec.rows > 0 then
+            card.check:SetChecked(true)
+            card.check.scripts.OnClick(card.check)
+        end
+    end
+end
 
 test("first slash use in combat is safe", function()
     combat = true
@@ -154,6 +166,8 @@ test("Merge opens a name preview without mutating builds", function()
 end)
 test("Nuke confirmation requires exact token and resets between openings", function()
     TM:ShowNuke(); assert(not TM.dialog.accept.enabled)
+    TM.dialog.input:SetText("NUKE"); assert(not TM.dialog.accept.enabled)
+    selectNukeColumns(TM)
     TM.dialog.input:SetText("nuke"); assert(not TM.dialog.accept.enabled)
     TM.dialog.input:SetText("NUKE"); assert(TM.dialog.accept.enabled)
     TM:ShowNuke(); assert(not TM.dialog.accept.enabled)
@@ -259,7 +273,7 @@ test("Nuke shows progress and blocks duplicate clicks until server events comple
         local ids = {}; for id = 1, 2 do if builds[id] then ids[#ids + 1] = id end end; return ids
     end
     timers = {}
-    TM:ShowNuke(); TM.dialog.input:SetText("NUKE")
+    TM:ShowNuke(); selectNukeColumns(TM); TM.dialog.input:SetText("NUKE")
     TM.dialog.accept.scripts.OnClick(TM.dialog.accept, "LeftButton")
     assert(#requested == 1 and TM.dialog:IsShown() and not TM.dialog.accept.enabled)
     assert(TM.dialog.error:GetText():find("0/2") and TM.dialog.back:GetText() == "Detener")
@@ -280,6 +294,58 @@ test("Classic skips UI initialization", function()
     assert(#frames == before)
     WOW_PROJECT_ID = 1
 end)
+test("Nuke columns have native spec names and icons; empty specs cannot be selected", function()
+    local info, count, getIDs = C_SpecializationInfo.GetSpecializationInfo, C_SpecializationInfo.GetNumSpecializationsForClassID, C_ClassTalents.GetConfigIDsBySpecID
+    C_SpecializationInfo.GetSpecializationInfo = function(index)
+        return 70 + index, ({ "Arms", "Fury", "Protection", "Empty" })[index], "", 1000 + index
+    end
+    C_SpecializationInfo.GetNumSpecializationsForClassID = function() return 4 end
+    builds[3], builds[4] = { name = "Fury build", key = "BBB" }, { name = "Tank build", key = "CCC" }
+    C_ClassTalents.GetConfigIDsBySpecID = function(spec)
+        if not spec or spec == 71 then return { 1, 2 } end
+        if spec == 72 then return { 3 } end
+        if spec == 73 then return { 4 } end
+        return {}
+    end
+    TM:ShowNuke()
+    local cards = TM.dialog.nukeCards
+    assert(#cards == 4 and cards[2].name:GetText() == "Fury" and cards[2].icon.texture == 1002)
+    assert(cards[2].builds:GetText() == "Fury build" and not cards[4].check.enabled)
+    TM.dialog.input:SetText("NUKE"); assert(not TM.dialog.accept.enabled)
+    cards[2].check:SetChecked(true); cards[2].check.scripts.OnClick(cards[2].check)
+    assert(TM.dialog.input:GetText() == "" and #TM.dialog.nukeState.rows == 1 and TM.dialog.nukeState.rows[1].id == 3)
+    TM.dialog.input:SetText("NUKE"); assert(TM.dialog.accept.enabled)
+    combat = true; TM:UpdateCombatState(); assert(not cards[2].check.enabled and not TM.dialog.accept.enabled)
+    combat = false; TM:UpdateCombatState()
+    cards[2].check:SetChecked(false); cards[2].check.scripts.OnClick(cards[2].check)
+    assert(#TM.dialog.nukeState.rows == 0 and not TM.dialog.accept.enabled)
+    TM:ShowNuke(); assert(#TM.dialog.nukeState.rows == 0 and not cards[2].check:GetChecked())
+    TM:ShowList(); assert(TM.view == "list" and not TM.dialog:IsShown())
+    C_SpecializationInfo.GetSpecializationInfo, C_SpecializationInfo.GetNumSpecializationsForClassID, C_ClassTalents.GetConfigIDsBySpecID = info, count, getIDs
+    builds[3], builds[4] = nil, nil
+end)
+test("single selected Nuke column sends deletion requests only for that spec", function()
+    local info, count, getIDs, delete = C_SpecializationInfo.GetSpecializationInfo, C_SpecializationInfo.GetNumSpecializationsForClassID, C_ClassTalents.GetConfigIDsBySpecID, C_ClassTalents.DeleteConfig
+    C_SpecializationInfo.GetSpecializationInfo = function(index) return 70 + index, index == 1 and "Arms" or "Fury", "", 1000 + index end
+    C_SpecializationInfo.GetNumSpecializationsForClassID = function() return 2 end
+    builds[3] = { name = "Fury only", key = "BBB" }
+    C_ClassTalents.GetConfigIDsBySpecID = function(spec)
+        if spec == 72 then return builds[3] and { 3 } or {} end
+        return { 1, 2 }
+    end
+    local requests = {}
+    C_ClassTalents.DeleteConfig = function(id) requests[#requests + 1] = id; return true end
+    timers = {}
+    TM:ShowNuke()
+    local card = TM.dialog.nukeCards[2]
+    card.check:SetChecked(true); card.check.scripts.OnClick(card.check)
+    TM.dialog.input:SetText("NUKE"); TM.dialog.accept.scripts.OnClick(TM.dialog.accept)
+    assert(#requests == 1 and requests[1] == 3 and not card.check.enabled)
+    builds[3] = nil; events.scripts.OnEvent(events, "TRAIT_CONFIG_DELETED", 3); flush()
+    assert(not TM.operation and builds[1] and builds[2] and TM.view == "list")
+    C_SpecializationInfo.GetSpecializationInfo, C_SpecializationInfo.GetNumSpecializationsForClassID, C_ClassTalents.GetConfigIDsBySpecID, C_ClassTalents.DeleteConfig = info, count, getIDs, delete
+    TM:Refresh()
+end)
 test("every WoW locale renders all views and preserves build names and NUKE", function()
     for _, locale in ipairs({ "enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "ptBR", "ruRU", "koKR", "zhCN", "zhTW" }) do
         GetLocale = function() return locale end
@@ -297,6 +363,7 @@ test("every WoW locale renders all views and preserves build names and NUKE", fu
         context:ShowClean()
         assert(context.dialog.report:GetText():find(context:T("REMOVE", ""), 1, true), locale)
         context:ShowNuke()
+        selectNukeColumns(context)
         context.dialog.input:SetText("NUKE")
         assert(context.dialog.accept.enabled and context.dialog.required == "NUKE", locale)
         context.window:Hide()

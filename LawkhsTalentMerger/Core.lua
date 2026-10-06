@@ -1,6 +1,6 @@
 local _, TM = ...
 local function T(key, ...) return TM:T(key, ...) end
-TM.version = "0.3.0"
+TM.version = "0.4.0"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -285,22 +285,45 @@ function TM:Merge(group, name)
     return self:DeleteRows(remove)
 end
 
+function TM:Specializations()
+    local specs = {}
+    if not self:Supported() or InCombatLockdown() then return specs end
+    local _, _, classID = UnitClass("player")
+    if not classID then return specs end
+    for i = 1, C_SpecializationInfo.GetNumSpecializationsForClassID(classID) do
+        local id, name, _, icon = C_SpecializationInfo.GetSpecializationInfo(i)
+        if id and id > 0 then
+            specs[#specs + 1] = { id = id, name = name or tostring(id), icon = icon,
+                rows = self:Read(id) }
+        end
+    end
+    return specs
+end
+
 function TM:AllRows()
     local rows = {}
-    if not self:Supported() or InCombatLockdown() then return rows end
-    local _, _, classID = UnitClass("player")
-    if not classID then return rows end
-    for i = 1, C_SpecializationInfo.GetNumSpecializationsForClassID(classID) do
-        for _, row in ipairs(self:Read(C_SpecializationInfo.GetSpecializationInfo(i))) do rows[#rows + 1] = row end
+    for _, spec in ipairs(self:Specializations()) do
+        for _, row in ipairs(spec.rows) do rows[#rows + 1] = row end
     end
     return rows
 end
 
-function TM:Nuke(rows, token)
+function TM:Nuke(rows, token, selectedSpecs)
     if token ~= "NUKE" then return false, T("NUKE_REQUIRED") end
     local writable, reason = self:Writable()
     if not writable then return false, reason end
-    local current = self:AllRows()
+    if #rows == 0 then return false, T("NUKE_NO_SELECTION") end
+    local scope = selectedSpecs or {}
+    if not selectedSpecs then
+        for _, row in ipairs(rows) do scope[row.spec] = true end
+    end
+    for _, row in ipairs(rows) do
+        if not scope[row.spec] then return false, T("LIST_CHANGED") end
+    end
+    local current = {}
+    for _, row in ipairs(self:AllRows()) do
+        if scope[row.spec] then current[#current + 1] = row end
+    end
     if #current ~= #rows then return false, T("LIST_CHANGED") end
     local ok, reason = self:Validate(rows)
     if ok then ok, reason = self:Backup(rows, "Nuke") end
