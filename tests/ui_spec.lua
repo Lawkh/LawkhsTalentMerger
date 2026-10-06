@@ -53,6 +53,11 @@ for _, name in ipairs({ "SetSize", "SetWidth", "SetHeight", "SetPoint", "SetFram
     "ClearAllPoints", "SetTexture", "SetBackdropBorderColor" }) do
     methods[name] = function() end
 end
+function methods:SetSize(w,h) self.width,self.height=w,h end
+function methods:SetWidth(w) self.width=w end
+function methods:SetHeight(h) self.height=h end
+function methods:GetWidth() return self.width or 0 end
+function methods:GetHeight() return self.height or 0 end
 function methods:GetFrameLevel() return 1 end
 function methods:GetTextWidth() return 80 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
@@ -421,9 +426,61 @@ test("new dashboard and history load in TOC order in every locale", function()
         context.specCards[1].check:SetChecked(true);context.specCards[1].check.scripts.OnClick(context.specCards[1].check)
         context:ShowNuke();context.dialog.input:SetText("NUKE");assert(context.dialog.accept.enabled)
         context:ShowHistory();assert(context.view=="history" and not context.dialog.accept:IsShown())
-        context:ShowMerge();assert(context.dialog.accept:IsShown() and context.dialog.input:GetText()=="Raid/Mythic")
+        context:ShowMerge();assert(context.dialog.accept:IsShown() and context.dialog.mergeRows[1].input:GetText()=="Raid/Mythic")
         context.window:Hide()
     end
     GetLocale=function() return "esES" end
+end)
+test("dashboard cards contain no action buttons, centered headers and unique filter", function()
+    TM:ShowList()
+    local card=TM.specCards[1]
+    assert(card.header and card.loadouts and card.duplicates)
+    assert(card.loadouts.label:GetText()==TM:T("LOADOUT_CELL",2))
+    for _,row in ipairs(card.lines) do assert(not row.merge) end
+    TM.hideUnique:SetChecked(true);TM.hideUnique.scripts.OnClick(TM.hideUnique)
+    assert(TM.hideUnique.label:GetText()==TM:T("HIDE_UNIQUE"))
+    assert(card.lines[1].label:GetText():find(TM:T("GROUP_DUPLICATES",1,2),1,true))
+    TM.hideUnique:SetChecked(false);TM.hideUnique.scripts.OnClick(TM.hideUnique)
+end)
+
+test("Merge and Clean previews honor selected specs and edit all names", function()
+    local info,count,getIDs=C_SpecializationInfo.GetSpecializationInfo,C_SpecializationInfo.GetNumSpecializationsForClassID,C_ClassTalents.GetConfigIDsBySpecID
+    C_SpecializationInfo.GetSpecializationInfo=function(i) return 70+i,i==1 and "Arms" or "Fury","",1000+i end
+    C_SpecializationInfo.GetNumSpecializationsForClassID=function() return 2 end
+    builds[3],builds[4]={name="Fury A",key="BBB"},{name="Fury B",key="BBB"}
+    C_ClassTalents.GetConfigIDsBySpecID=function(spec) return spec==72 and {3,4} or {1,2} end
+    TM:ShowList();TM.selectedSpecs={[72]=true};TM:UpdateDashboardSelection()
+    TM:ShowClean()
+    assert(TM.dialog.report:GetText():find("Fury A",1,true) and not TM.dialog.report:GetText():find("Raid",1,true))
+    local clean=TM.Clean;local called
+    TM.Clean=function(_,groups) called=groups;return true end
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept)
+    assert(#called==1 and called[1].rows[1].spec==72);TM.Clean=clean
+    TM.selectedSpecs={[71]=true,[72]=true};TM:ShowMerge()
+    assert(TM.dialog.mergeRows[1].input:GetText()=="Raid/Mythic" and TM.dialog.mergeRows[2].input:GetText()=="Fury A/Fury B")
+    TM.dialog.mergeRows[1].input:SetText("My raid");TM.dialog.mergeRows[2].input:SetText("My Fury")
+    local merge=TM.MergeMany
+    TM.MergeMany=function(_,groups,names)
+        assert(#groups==2 and names[1]=="My raid" and names[2]=="My Fury");return true
+    end
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept);assert(TM.view=="list");TM.MergeMany=merge
+    TM.selectedSpecs={};TM:UpdateDashboardSelection()
+    assert(not TM.mergeButton.enabled and not TM.cleanButton.enabled and not TM.nukeButton.enabled)
+    C_SpecializationInfo.GetSpecializationInfo,C_SpecializationInfo.GetNumSpecializationsForClassID,C_ClassTalents.GetConfigIDsBySpecID=info,count,getIDs
+    builds[3],builds[4]=nil,nil
+end)
+
+test("Nuke confirmation uses chosen scope, numeric token and width fitting content", function()
+    TM:ShowList();TM.selectedSpecs={[71]=true};TM:ShowNuke()
+    assert(TM.status:GetText()==TM:T("NUKE_CONFIRM_TITLE"))
+    assert(TM.dialog.report:GetText():find("123123",1,true))
+    assert(TM.dialog.report:GetWidth()<=TM.window:GetWidth()-60)
+    assert(TM.window:GetHeight()==620)
+    TM.dialog.input:SetText("123123");assert(TM.dialog.accept.enabled)
+    local nuke=TM.Nuke;local called=false
+    TM.Nuke=function(_,rows,token,scope) assert(token=="123123" and scope[71] and #rows==2);called=true;return true end
+    TM.dialog.accept.scripts.OnClick(TM.dialog.accept);assert(called and TM.view=="list");TM.Nuke=nuke
+    TM:ShowMerge();TM:ShowNuke()
+    for _,row in ipairs(TM.dialog.mergeRows) do assert(not row:IsShown()) end
 end)
 print(passed .. " UI tests passed")

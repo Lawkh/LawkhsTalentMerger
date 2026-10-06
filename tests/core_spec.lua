@@ -462,4 +462,28 @@ test("old restore timeout cannot abort the next import", function()
     assert(not TM.operation and #TM:RestorePlan(backup,71)==1)
     TM.ImportBackup,C_Timer.After=fn,timer
 end)
+test("numeric Nuke confirmation is accepted with identical scope guards", function()
+    assert(TM:IsNukeToken("123123") and TM:IsNukeToken("NUKE"))
+    assert(not TM:IsNukeToken("12312") and not TM:IsNukeToken("nuke") and not TM:IsNukeToken(" NUKE"))
+    assert(TM:Nuke(TM:Read(72),"123123",{[72]=true}))
+    assert(#deleted==1 and deleted[1]==8 and builds[1])
+end)
+
+test("batch Merge renames each group and preserves unrelated specs", function()
+    builds[9]={name="Other copy",key="DDD"};ids[72][#ids[72]+1]=9
+    local a=TM:Group(TM:Read(71));local b=TM:Group(TM:Read(72))
+    local groups={a[1],b[1]}
+    assert(TM:MergeMany(groups,{"Raid merged","Fury merged"}))
+    assert(builds[1].name=="Raid merged" and builds[8].name=="Fury merged")
+    assert(not builds[2] and not builds[9] and builds[4] and builds[5])
+    local backup=LawkhsTalentMergerDB.backups[1]
+    assert(#backup.builds==4 and backup.builds[1].renamedTo=="Raid merged" and backup.builds[3].renamedTo=="Fury merged")
+end)
+
+test("batch Merge validates every name and snapshot before any mutation", function()
+    local groups=TM:Group(TM:Read(71))
+    assert(TM:MergeMany(groups,{"Good","  "})==false and not next(renamed) and #deleted==0)
+    builds[5].name="Changed"
+    assert(TM:MergeMany(groups,{"Good","Good too"})==false and not next(renamed) and #deleted==0)
+end)
 print(passed .. " tests passed")

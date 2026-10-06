@@ -1,6 +1,6 @@
 local _, TM = ...
 local function T(key, ...) return TM:T(key, ...) end
-TM.version = "0.5.0"
+TM.version = "0.6.0"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -316,7 +316,7 @@ function TM:AllRows()
 end
 
 function TM:Nuke(rows, token, selectedSpecs)
-    if token ~= "NUKE" then return false, T("NUKE_REQUIRED") end
+    if not self:IsNukeToken(token) then return false, T("NUKE_REQUIRED") end
     local writable, reason = self:Writable()
     if not writable then return false, reason end
     if #rows == 0 then return false, T("NUKE_NO_SELECTION") end
@@ -336,4 +336,32 @@ function TM:Nuke(rows, token, selectedSpecs)
     if ok then ok, reason = self:Backup(rows, "Nuke") end
     if not ok then self:Message(reason); return false, reason end
     return self:DeleteRows(rows)
+end
+
+function TM:IsNukeToken(value)
+    return value == "NUKE" or value == "123123"
+end
+
+function TM:MergeMany(groups, names)
+    local all, remove = {}, {}
+    for i, group in ipairs(groups) do
+        local name = (names[i] or ""):match("^%s*(.-)%s*$")
+        if name == "" or name:find("[|%c]") then return false, T("NAME_INVALID") end
+        names[i] = name
+        for j, row in ipairs(group.rows) do
+            all[#all + 1] = row
+            if j > 1 then remove[#remove + 1] = row end
+        end
+    end
+    if #all == 0 then return false, T("NO_DUPLICATES") end
+    local ok, reason = self:Validate(all)
+    if ok then ok, reason = self:Backup(all, "Merge") end
+    if not ok then return false, reason end
+    for i, group in ipairs(groups) do
+        if not C_ClassTalents.RenameConfig(group.rows[1].id, names[i]) then return false, T("RENAME_FAILED") end
+        for _, build in ipairs(self.lastBackup.builds) do
+            if build.id == group.rows[1].id then build.renamedTo = names[i]; break end
+        end
+    end
+    return self:DeleteRows(remove)
 end

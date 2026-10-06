@@ -8,8 +8,8 @@ Lawkh's Talent Merger compares selected talents and ranks, including Hero Talent
 
 - **Merge:** choose a duplicate group and enter a name for the resulting loadout. The addon suggests a combined name such as `Raid/Mythic+/PvP`. It renames the first loadout and removes the other identical copies, preserving the first loadout's settings.
 - **Clean:** review exactly which loadouts will be kept and deleted. The first loadout in each duplicate group is kept, along with all unique loadouts.
-- **Main window:** specialization columns with native icons, duplicate groups, per-group Merge buttons and independent scrolling. Select the specializations you want to manage with Nuke.
-- **Nuke:** preview the saved loadouts in the selected specializations and type exactly `NUKE` to confirm. Unchecked specializations and active talents are preserved.
+- **Main window:** specialization columns with native icons, duplicate groups, spaced build cards and independent scrolling. Centered spec headers have a checkbox on the right and separate loadout/duplicate count cells. Select the specializations for Merge, Clean and Nuke; each Merge group has an editable resulting name in the preview. Hide unique builds filters the view without changing action scope.
+- **Nuke:** preview the saved loadouts in the selected specializations and type exactly `NUKE` or `123123` to confirm. Unchecked specializations and active talents are preserved.
 - **One window:** the list, previews, confirmations, progress and errors share the same window.
 - **Controlled deletion:** loadouts are deleted one at a time, waiting for WoW confirmation. Additional operations are blocked while deletion is in progress. Use **Stop** to stop further requests.
 - **Checks before changing loadouts:** operations are blocked during combat, while dead or a ghost, and while talent changes are pending. The confirmed loadouts are checked again before each deletion.

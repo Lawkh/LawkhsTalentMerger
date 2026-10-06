@@ -124,6 +124,9 @@ function TM:Dialog(title, report, initial, required, callback)
         f.input:SetPoint("BOTTOMLEFT", 5, 65)
         f.input:SetAutoFocus(false)
         f.input:SetMaxLetters(0)
+        f.inputHint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        f.inputHint:SetPoint("BOTTOMLEFT", 5, 40)
+        f.inputHint:SetJustifyH("LEFT")
         f.error = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         f.error:SetPoint("BOTTOMLEFT", 0, 105)
         f.error:SetWidth(530)
@@ -134,7 +137,7 @@ function TM:Dialog(title, report, initial, required, callback)
             if self.operation or not f.callback then return end
             local value = f.input:GetText()
             if f.nukeState and #f.nukeState.rows == 0 then f.error:SetText(T("NUKE_NO_SELECTION")); return end
-            if f.required and value ~= f.required then f.error:SetText(T("TYPE_EXACT", f.required)); return end
+            if f.required and not self:MatchesConfirmation(value, f.required) then f.error:SetText(T("TYPE_EXACT", f.required == "NUKE" and "NUKE / 123123" or f.required)); return end
             if f.needsName and not value:match("%S") then f.error:SetText(T("NAME_REQUIRED")); return end
             if InCombatLockdown() then f.error:SetText(T("COMBAT")); return end
             local callback = f.callback
@@ -172,17 +175,29 @@ function TM:Dialog(title, report, initial, required, callback)
         f.input:SetScript("OnEscapePressed", function() f.back:GetScript("OnClick")(f.back) end)
     end
     local f = self.dialog
-    self.window:SetSize(600, 510)
-    self.status:SetWidth(550)
+    local width = self.dashboardWidth or 760
+    self.window:SetSize(width, 620)
+    self.status:SetWidth(width - 50)
+    for _, row in ipairs(f.mergeRows or {}) do row:Hide() end
     f.accept:Show()
     for _, row in ipairs(f.historyRows or {}) do row:Hide() end
     f.report:Show()
     f.scroll:Show()
-    f.input:SetWidth(530)
-    f.error:SetWidth(530)
+    local dialogWidth = width - 50
+    f.content:SetWidth(dialogWidth - 20)
+    f.report:SetWidth(dialogWidth - 20)
+    f.input:SetWidth(dialogWidth)
+    f.error:SetWidth(dialogWidth)
+    f.scroll:ClearAllPoints()
+    f.scroll:SetPoint("TOPLEFT", 0, 0)
+    f.scroll:SetPoint("BOTTOMRIGHT", -22, initial ~= nil and 160 or 110)
     f.restoreSpec = nil
     f.nukeState = nil
     if f.nukeBoard then f.nukeBoard:Hide(); f.nukeIntro:Hide(); f.nukeSummary:Hide() end
+    f.error:ClearAllPoints()
+    f.error:SetPoint("BOTTOMLEFT", 0, initial ~= nil and 102 or 45)
+    f.error:SetHeight(initial ~= nil and 44 or 50)
+    f.report:SetHeight(0)
     self.view = "confirm"
     self.listPanel:Hide()
     f.callback, f.required, f.needsName = callback, required, initial ~= nil and not required
@@ -193,10 +208,13 @@ function TM:Dialog(title, report, initial, required, callback)
     f.report:SetText(report)
     f.content:SetHeight(math.max(1, f.report:GetStringHeight() + 12))
     f.scroll:SetVerticalScroll(0)
+    f.inputHint:SetWidth(dialogWidth)
+    f.inputHint:SetShown(required ~= nil)
+    f.inputHint:SetText(required == "NUKE" and T("NUKE_REQUIRED") or "")
     f.input:SetShown(initial ~= nil)
     f.input:SetText(initial or "")
     f.accept:SetEnabled(not InCombatLockdown() and
-        (not required or f.input:GetText() == required) and
+        (not required or self:MatchesConfirmation(f.input:GetText(), required)) and
         (not f.needsName or f.input:GetText():match("%S") ~= nil))
     f:Show()
     self.window:Show()
@@ -418,7 +436,7 @@ function TM:UpdateCombatState()
     local f = self.dialog
     if f and f:IsShown() then
         local value = f.input:GetText()
-        f.accept:SetEnabled(ready and f.callback ~= nil and (not f.nukeState or #f.nukeState.rows > 0) and (not f.required or value == f.required) and
+        f.accept:SetEnabled(ready and f.callback ~= nil and (not f.nukeState or #f.nukeState.rows > 0) and (not f.required or self:MatchesConfirmation(value, f.required)) and
             (not f.needsName or value:match("%S") ~= nil))
         if self.operation then
             f.error:SetText(T("PROGRESS", self.operation.deleted, #self.operation.rows,
@@ -555,4 +573,8 @@ SlashCmdList.LAWKHSTALENTMERGER = function(command)
     elseif command == "merge" then TM:ShowMerge()
     elseif TM.window:IsShown() then TM.window:Hide()
     else TM:ShowList() end
+end
+
+function TM:MatchesConfirmation(value, required)
+    return required == "NUKE" and self:IsNukeToken(value) or value == required
 end
