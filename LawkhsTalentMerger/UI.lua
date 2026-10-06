@@ -535,22 +535,32 @@ for _, event in ipairs({ "PLAYER_LOGIN", "ADDON_LOADED", "TRAIT_CONFIG_UPDATED",
     "TRAIT_CONFIG_DELETED", "TRAIT_CONFIG_LIST_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }) do events:RegisterEvent(event) end
 events:SetScript("OnEvent", function(_, event, ...)
-    if event == "TRAIT_CONFIG_DELETED" then TM:ConfirmDeletion(...) end
-    if TM.ConfirmRestore and (event == "TRAIT_CONFIG_CREATED" or event == "TRAIT_CONFIG_UPDATED" or event == "TRAIT_CONFIG_LIST_UPDATED") then TM:ConfirmRestore() end
-    if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
-        TM:UpdateCombatState()
+    if event == "ADDON_LOADED" then
+        local name = ...
+        if name ~= "LawkhsTalentMerger" and name ~= "Blizzard_PlayerSpells" then return end
     end
+    if event == "TRAIT_CONFIG_DELETED" then TM:ConfirmDeletion(...) end
+    if TM.ConfirmRestore and TM.operation and TM.operation.kind == "restore" and
+        (event == "TRAIT_CONFIG_CREATED" or event == "TRAIT_CONFIG_UPDATED" or event == "TRAIT_CONFIG_LIST_UPDATED") then TM:ConfirmRestore() end
+    if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then TM:UpdateCombatState() end
+    if event == "PLAYER_LOGIN" or event == "ADDON_LOADED" or event == "PLAYER_REGEN_ENABLED" then
+        TM:RegisterMenu(); TM:Attach()
+    end
+    -- No talent reads or UI construction for background events while closed.
+    if not TM.window or not TM.window:IsShown() or TM.view ~= "list" or InCombatLockdown() then return end
     if TM.pendingRefresh then return end
     TM.pendingRefresh = true
-    C_Timer.After(0.1, function()
+    C_Timer.After(0.25, function()
         TM.pendingRefresh = nil
-        TM:Refresh()
+        if TM.window and TM.window:IsShown() and TM.view == "list" and not InCombatLockdown() then TM:Refresh() end
     end)
 end)
 
 SLASH_LAWKHSTALENTMERGER1 = "/tm"
 SLASH_LAWKHSTALENTMERGER2 = "/lawkhtm"
 SlashCmdList.LAWKHSTALENTMERGER = function(command)
+    command = command:lower():match("^%s*(.-)%s*$")
+    if command == "memory" then TM:MemoryReport(); return end
     TM:CreateWindow()
     TM:Refresh()
     command = command:lower():match("^%s*(.-)%s*$")

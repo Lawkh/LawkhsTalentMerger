@@ -131,7 +131,9 @@ test("first slash use in combat is safe", function()
 end)
 test("login refresh works before Blizzard talent addon loads", function()
     events.scripts.OnEvent(events, "PLAYER_LOGIN"); flush()
-    assert(#TM.groups == 1 and not TM.attached)
+    assert(not TM.groups and not TM.attached)
+    TM:ShowList()
+    assert(#TM.groups == 1)
 end)
 test("late loaded talents attach without rewriting native selector", function()
     PlayerSpellsFrame = { TalentsFrame = talents }
@@ -482,5 +484,49 @@ test("Nuke confirmation uses chosen scope, numeric token and width fitting conte
     TM.dialog.accept.scripts.OnClick(TM.dialog.accept);assert(called and TM.view=="list");TM.Nuke=nuke
     TM:ShowMerge();TM:ShowNuke()
     for _,row in ipairs(TM.dialog.mergeRows) do assert(not row:IsShown()) end
+end)
+test("closed addon ignores talent-event bursts and unrelated addon loads", function()
+    TM.window:Hide();timers={}
+    local before=TM.readCount
+    for i=1,100 do
+        events.scripts.OnEvent(events,"TRAIT_CONFIG_UPDATED",1)
+        events.scripts.OnEvent(events,"ADDON_LOADED","UnrelatedAddon"..i)
+    end
+    flush()
+    assert(TM.readCount==before and #timers==0)
+end)
+
+test("visible refresh reads each spec once and reuses frames", function()
+    TM:ShowList();timers={}
+    local reads,frameCount=TM.readCount,#frames
+    for i=1,50 do events.scripts.OnEvent(events,"TRAIT_CONFIG_UPDATED",1) end
+    assert(#timers==1);flush()
+    assert(TM.readCount==reads+1 and #frames==frameCount)
+    reads=TM.readCount
+    for i=1,100 do TM:Refresh() end
+    assert(TM.readCount==reads+100 and #frames==frameCount)
+end)
+
+test("confirmation events do not rescan specs or rebuild previews", function()
+    TM.selectedSpecs={[71]=true};TM:ShowMerge();timers={}
+    TM.dialog.mergeRows[1].input:SetText("My edited name")
+    local reads=TM.readCount
+    for i=1,100 do events.scripts.OnEvent(events,"TRAIT_CONFIG_UPDATED",1) end
+    flush()
+    assert(TM.readCount==reads and TM.dialog.mergeRows[1].input:GetText()=="My edited name")
+    TM:ShowList()
+end)
+
+test("ten-operation Undo history shares one spec read", function()
+    LawkhsTalentMergerDB={backups={}}
+    for i=1,10 do
+        LawkhsTalentMergerDB.backups[i]={time=123,action="Nuke",builds={{name="Missing"..i,spec=71,export="OLD"..i}}}
+    end
+    local reads=TM.readCount
+    TM:ShowHistory()
+    assert(TM.readCount==reads+1 and #LawkhsTalentMergerDB.backups==10)
+    local before=TM.readCount
+    SlashCmdList.LAWKHSTALENTMERGER("memory")
+    assert(TM.readCount==before)
 end)
 print(passed .. " UI tests passed")

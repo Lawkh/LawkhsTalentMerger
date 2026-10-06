@@ -933,6 +933,16 @@ locales.ruRU.ACTION_PREVIEW_HINT = "Нажмите действие, чтобы 
 locales.koKR.ACTION_PREVIEW_HINT = "작업을 클릭하여 변경 내용을 미리 확인하세요. 확인하기 전에는 아무것도 변경되지 않습니다."
 locales.zhCN.ACTION_PREVIEW_HINT = "点击操作可预览更改。确认之前不会进行任何修改。"
 locales.zhTW.ACTION_PREVIEW_HINT = "點擊操作可預覽變更。確認之前不會進行任何修改。"
+locales.enUS.MEMORY_REPORT = "Memory: %s MB · Undo: %d operations, %d builds, %d bytes of text · Talent reads: %d"
+locales.esES.MEMORY_REPORT = "Memoria: %s MB · Undo: %d operaciones, %d builds, %d bytes de texto · Lecturas de talentos: %d"
+locales.deDE.MEMORY_REPORT = "Speicher: %s MB · Rückgängig: %d Vorgänge, %d Builds, %d Textbytes · Talentabfragen: %d"
+locales.frFR.MEMORY_REPORT = "Mémoire : %s Mo · Annuler : %d opérations, %d builds, %d octets de texte · Lectures des talents : %d"
+locales.itIT.MEMORY_REPORT = "Memoria: %s MB · Annulla: %d operazioni, %d build, %d byte di testo · Letture dei talenti: %d"
+locales.ptBR.MEMORY_REPORT = "Memória: %s MB · Desfazer: %d operações, %d builds, %d bytes de texto · Leituras de talentos: %d"
+locales.ruRU.MEMORY_REPORT = "Память: %s МБ · Отмена: %d операций, %d наборов, %d байт текста · Чтений талантов: %d"
+locales.koKR.MEMORY_REPORT = "메모리: %s MB · 실행 취소: 작업 %d개, 구성 %d개, 텍스트 %d바이트 · 특성 조회: %d회"
+locales.zhCN.MEMORY_REPORT = "内存：%s MB · 撤销：%d次操作，%d份配置，%d字节文本 · 天赋读取：%d次"
+locales.zhTW.MEMORY_REPORT = "記憶體：%s MB · 復原：%d次操作，%d份配置，%d位元組文字 · 天賦讀取：%d次"
 locales.enGB = locales.enUS
 locales.esMX = locales.esES
 -- Compatibility alias for clients reporting the older Portuguese locale.

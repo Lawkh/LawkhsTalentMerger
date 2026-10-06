@@ -108,6 +108,7 @@ function TM:RenderDashboard()
         card.icon:SetTexture(spec.icon or "Interface/Icons/INV_Misc_QuestionMark")
         card.name:SetWidth(cardWidth - 90); card.name:SetHeight(36); card.name:SetText(spec.name)
         local groups, colors = self:Group(spec.rows)
+        if spec.id == self:SpecID() then self.rows, self.groups, self.colors = spec.rows, groups, colors end
         total = total + #spec.rows; groupTotal = groupTotal + #groups
         local cellWidth=(cardWidth-12)/2
         card.loadouts:SetWidth(cellWidth);card.duplicates:SetWidth(cellWidth)
@@ -197,7 +198,7 @@ function TM:ShowHistory()
             local count = 0
             for _, build in ipairs(backup.builds) do if build.spec == spec.id then count = count + 1 end end
             if count > 0 then
-                local pending = #self:RestorePlan(backup, spec.id)
+                local pending = #self:RestorePlan(backup, spec.id, spec.rows)
                 Row(spec.name .. " · " .. T("RESTORE_PENDING", pending), pending > 0 and function()
                     self:ShowRestore(backup, spec)
                 end or nil)
@@ -222,10 +223,15 @@ function TM:CreateWindow()
     oldCreate(self)
     self:CreateDashboard()
 end
-local oldRefresh = TM.Refresh
 function TM:Refresh()
-    oldRefresh(self)
-    if self:Supported() and not InCombatLockdown() then self:RenderDashboard() end
+    self:CreateWindow()
+    self:RegisterMenu()
+    self:Attach()
+    if not self:Supported() then self.status:SetText(T("API_UNAVAILABLE")); self:UpdateCombatState(); return end
+    if InCombatLockdown() then self:UpdateCombatState(); return end
+    -- Dialog previews are immutable. Read again when returning to the list.
+    if self.view ~= "list" then self:UpdateCombatState(); return end
+    self:RenderDashboard()
 end
 local oldState = TM.UpdateCombatState
 function TM:UpdateCombatState()

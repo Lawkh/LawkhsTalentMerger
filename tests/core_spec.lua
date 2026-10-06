@@ -522,4 +522,21 @@ test("Undo cleans older restored entries but keeps pending specs", function()
     assert(#LawkhsTalentMergerDB.backups==1 and LawkhsTalentMergerDB.backups[1]==mixed)
     assert(#mixed.builds==1 and mixed.builds[1].spec==72)
 end)
+test("node lists are shared within a read but validation remains fresh", function()
+    withNodes(function()
+        local api=C_Traits.GetTreeNodes
+        local calls=0
+        C_Traits.GetTreeNodes=function(tree) calls=calls+1;return api(tree) end
+        local rows=TM:Read(71)
+        assert(calls==1)
+        builds[2].nodes[10].activeEntry.entryID=999
+        assert(TM:Validate({rows[2]})==false and calls==2)
+    end)
+end)
+
+test("Undo stays bounded and does not store node signatures", function()
+    for i=1,20 do assert(TM:Backup(TM:Read(72),"Nuke")) end
+    assert(#LawkhsTalentMergerDB.backups==10)
+    assert(not LawkhsTalentMergerDB.backups[1].builds[1].key)
+end)
 print(passed .. " tests passed")

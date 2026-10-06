@@ -1,6 +1,6 @@
 local _, TM = ...
 local function T(key, ...) return TM:T(key, ...) end
-TM.version = "0.6.2"
+TM.version = "0.6.3"
 TM.palette = { "66ccff", "ffb366", "99e699", "e699ff", "ffff80", "ff8099", "80e6cc", "b3b3ff" }
 
 function TM:Supported()
@@ -52,12 +52,16 @@ function TM:Export(id, specID, info)
     return ok and type(value) == "string" and value ~= "" and value or nil
 end
 
-function TM:Fingerprint(id, specID, info)
+function TM:Fingerprint(id, specID, info, nodeLists)
     if not info.treeIDs or #info.treeIDs == 0 or not C_Traits.GetTreeNodes or not C_Traits.GetNodeInfo then return nil end
     local ok, signature = pcall(function()
         local parts, seen = {}, {}
         for _, treeID in ipairs(info.treeIDs) do
-            local nodes = C_Traits.GetTreeNodes(treeID)
+            local nodes = nodeLists and nodeLists[treeID]
+            if not nodes then
+                nodes = C_Traits.GetTreeNodes(treeID)
+                if nodeLists then nodeLists[treeID] = nodes end
+            end
             if not nodes or #nodes == 0 then return nil end
             parts[#parts + 1] = "tree:" .. treeID
             for _, nodeID in ipairs(nodes) do
@@ -95,11 +99,13 @@ function TM:Read(specID)
     local diagnostic = { spec = specID, raw = #ids, missing = 0, active = 0, unreadable = 0, byNodes = 0 }
     self.readDiagnostics = self.readDiagnostics or {}
     self.readDiagnostics[specID] = diagnostic
+    local nodeLists = {}
+    self.readCount = (self.readCount or 0) + 1
     for _, id in ipairs(ids) do
         local info = C_Traits.GetConfigInfo(id)
         if info and id ~= C_ClassTalents.GetActiveConfigID() then
             local export = self:Export(id, specID, info)
-            local signature = self:Fingerprint(id, specID, info)
+            local signature = self:Fingerprint(id, specID, info, nodeLists)
             rows[#rows + 1] = { id = id, spec = specID, name = info.name,
                 key = signature or (export and "export:" .. export), export = export }
             if signature then diagnostic.byNodes = diagnostic.byNodes + 1 end
@@ -186,7 +192,7 @@ function TM:Backup(rows, action)
     local backup = { time = time(), action = action, builds = {} }
     for _, row in ipairs(rows) do
         if not row.export then return false, T("EXPORT_FAILED", row.name) end
-        backup.builds[#backup.builds + 1] = { id = row.id, name = row.name, spec = row.spec, export = row.export, key = row.key }
+        backup.builds[#backup.builds + 1] = { id = row.id, name = row.name, spec = row.spec, export = row.export }
     end
     table.insert(LawkhsTalentMergerDB.backups, 1, backup)
     while #LawkhsTalentMergerDB.backups > 10 do table.remove(LawkhsTalentMergerDB.backups) end
@@ -364,4 +370,18 @@ function TM:MergeMany(groups, names)
         end
     end
     return self:DeleteRows(remove)
+end
+
+function TM:MemoryReport()
+    if UpdateAddOnMemoryUsage then UpdateAddOnMemoryUsage() end
+    local usage = GetAddOnMemoryUsage and GetAddOnMemoryUsage("LawkhsTalentMerger")
+    local backups = LawkhsTalentMergerDB and LawkhsTalentMergerDB.backups or {}
+    local builds, bytes = 0, 0
+    for _, backup in ipairs(backups) do
+        for _, build in ipairs(backup.builds) do
+            builds = builds + 1
+            bytes = bytes + #(build.name or "") + #(build.export or "") + #(build.key or "")
+        end
+    end
+    self:Message(T("MEMORY_REPORT", usage and string.format("%.2f", usage / 1024) or "?", #backups, builds, bytes, self.readCount or 0))
 end

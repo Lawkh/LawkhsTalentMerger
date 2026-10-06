@@ -1,8 +1,8 @@
 local _, TM = ...
 local function T(key, ...) return TM:T(key, ...) end
 
-function TM:RestorePlan(backup, specID)
-    local current, claimed, plan = self:Read(specID), {}, {}
+function TM:RestorePlan(backup, specID, currentRows)
+    local current, claimed, plan = currentRows or self:Read(specID), {}, {}
     for _, build in ipairs(backup.builds) do
         if build.spec == specID then
             local found
@@ -68,7 +68,7 @@ function TM:PruneUndoHistory(specs)
     for i = #backups, 1, -1 do
         local backup = backups[i]
         for _, spec in ipairs(specs) do
-            if #self:RestorePlan(backup, spec.id) == 0 then self:RemoveUndoSpec(backup, spec.id) end
+            if #self:RestorePlan(backup, spec.id, spec.rows) == 0 then self:RemoveUndoSpec(backup, spec.id) end
         end
     end
 end
